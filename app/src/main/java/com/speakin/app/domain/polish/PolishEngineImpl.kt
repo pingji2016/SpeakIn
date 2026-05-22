@@ -1,28 +1,22 @@
 package com.speakin.app.domain.polish
 
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PolishEngineImpl @Inject constructor() : PolishEngine {
 
-    private var modelLoaded: Boolean = false
-
     override fun polish(text: String, callback: PolishEngine.Callback) {
-        if (!modelLoaded) {
+        kotlinx.coroutines.GlobalScope.launch {
+            delay(500)
             callback.onResult(text)
-            return
         }
-        callback.onResult(text)
     }
 
-    override fun isModelLoaded(): Boolean = modelLoaded
+    override fun isModelLoaded(): Boolean = true
 
-    fun loadModel() {
-        modelLoaded = true
-    }
-
-    override fun release() {
-        modelLoaded = false
-    }
+    override fun release() {}
 }

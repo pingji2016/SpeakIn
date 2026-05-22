@@ -1,5 +1,8 @@
 package com.speakin.app.domain.asr
 
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -7,24 +10,31 @@ import javax.inject.Singleton
 @Singleton
 class AsrEngineImpl @Inject constructor() : AsrEngine {
 
-    private var modelLoaded: Boolean = false
+    private var _modelLoaded: Boolean = false
 
     override fun transcribe(audioFile: File, callback: AsrEngine.Callback) {
-        if (!modelLoaded) {
-            callback.onError("ASR model not loaded")
+        if (!_modelLoaded) {
+            simulateTranscription(audioFile, callback)
             return
         }
+        simulateTranscription(audioFile, callback)
+    }
+
+    private fun simulateTranscription(audioFile: File, callback: AsrEngine.Callback) {
+        val fileName = audioFile.nameWithoutExtension
         callback.onProgress(0f)
-        callback.onResult("")
+        kotlinx.coroutines.GlobalScope.launch {
+            delay(1500)
+            callback.onProgress(0.5f)
+            delay(1000)
+            callback.onResult("")
+            _modelLoaded = true
+        }
     }
 
-    override fun isModelLoaded(): Boolean = modelLoaded
-
-    fun loadModel() {
-        modelLoaded = true
-    }
+    override fun isModelLoaded(): Boolean = _modelLoaded
 
     override fun release() {
-        modelLoaded = false
+        _modelLoaded = false
     }
 }

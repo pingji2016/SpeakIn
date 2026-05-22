@@ -2,13 +2,14 @@ package com.speakin.app.domain.audio
 
 import android.content.Context
 import android.media.MediaRecorder
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AudioRecorder @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
 
     private var mediaRecorder: MediaRecorder? = null

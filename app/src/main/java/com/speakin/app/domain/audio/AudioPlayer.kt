@@ -2,13 +2,14 @@ package com.speakin.app.domain.audio
 
 import android.content.Context
 import android.media.MediaPlayer
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AudioPlayer @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
 
     private var mediaPlayer: MediaPlayer? = null
