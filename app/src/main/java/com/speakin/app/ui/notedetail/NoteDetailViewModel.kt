@@ -9,6 +9,8 @@ import com.speakin.app.data.repository.NoteRepository
 import com.speakin.app.domain.asr.AsrEngine
 import com.speakin.app.domain.audio.AudioPlayer
 import com.speakin.app.domain.audio.AudioRecorder
+import com.speakin.app.domain.llm.ModelManager
+import com.speakin.app.domain.llm.ModelState
 import com.speakin.app.domain.polish.PolishEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +41,8 @@ class NoteDetailViewModel @Inject constructor(
     private val audioPlayer: AudioPlayer,
     private val asrEngine: AsrEngine,
     private val polishEngine: PolishEngine,
-    private val audioOutputDir: File
+    private val audioOutputDir: File,
+    private val modelManager: ModelManager
 ) : ViewModel() {
 
     private val noteId: String = savedStateHandle.get<String>("noteId") ?: ""
@@ -48,6 +51,8 @@ class NoteDetailViewModel @Inject constructor(
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
     private var currentAudioFile: File? = null
+
+    val modelState: StateFlow<ModelState> = modelManager.modelState
 
     init {
         viewModelScope.launch {
@@ -62,6 +67,12 @@ class NoteDetailViewModel @Inject constructor(
             repository.getSegmentsByNoteId(noteId).collect { segments ->
                 _uiState.value = _uiState.value.copy(segments = segments)
             }
+        }
+    }
+
+    fun checkModel() {
+        viewModelScope.launch {
+            modelManager.checkAndPrepare()
         }
     }
 

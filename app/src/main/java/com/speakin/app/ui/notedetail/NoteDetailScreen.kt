@@ -33,6 +33,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.speakin.app.data.local.entity.SegmentEntity
+import com.speakin.app.domain.llm.ModelStatus
+import com.speakin.app.ui.modeldownload.ModelDownloadOverlay
 import com.speakin.app.ui.recording.RecordingBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,131 +55,144 @@ fun NoteDetailScreen(
     viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val modelState by viewModel.modelState.collectAsState()
     var editingTitle by remember { mutableStateOf(false) }
     var titleText by remember { mutableStateOf("") }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    if (editingTitle) {
-                        TextField(
-                            value = titleText,
-                            onValueChange = { titleText = it },
-                            singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.primary,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.primary,
-                                focusedTextColor = MaterialTheme.colorScheme.onPrimary,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onPrimary,
-                                cursorColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Text(uiState.note?.title ?: "Note")
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
+    LaunchedEffect(Unit) {
+        viewModel.checkModel()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
                         if (editingTitle) {
-                            viewModel.updateTitle(titleText)
+                            TextField(
+                                value = titleText,
+                                onValueChange = { titleText = it },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.primary,
+                                    focusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                    cursorColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         } else {
-                            titleText = uiState.note?.title ?: ""
+                            Text(uiState.note?.title ?: "Note")
                         }
-                        editingTitle = !editingTitle
-                    }) {
-                        Icon(
-                            if (editingTitle) Icons.Default.Stop else Icons.AutoMirrored.Filled.TextSnippet,
-                            contentDescription = if (editingTitle) "Save" else "Edit title"
-                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            if (editingTitle) {
+                                viewModel.updateTitle(titleText)
+                            } else {
+                                titleText = uiState.note?.title ?: ""
+                            }
+                            editingTitle = !editingTitle
+                        }) {
+                            Icon(
+                                if (editingTitle) Icons.Default.Stop else Icons.AutoMirrored.Filled.TextSnippet,
+                                contentDescription = if (editingTitle) "Save" else "Edit title"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            },
+            bottomBar = {
+                if (!uiState.isTranscribing) {
+                    RecordingBar(
+                        isRecording = uiState.isRecording,
+                        onStartRecording = { viewModel.startRecording() },
+                        onStopRecording = { viewModel.stopRecording() }
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .padding(bottom = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Transcribing...")
+                        }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            )
-        },
-        bottomBar = {
-            if (!uiState.isTranscribing) {
-                RecordingBar(
-                    isRecording = uiState.isRecording,
-                    onStartRecording = { viewModel.startRecording() },
-                    onStopRecording = { viewModel.stopRecording() }
-                )
-            } else {
+                }
+            }
+        ) { padding ->
+            if (uiState.isLoading) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .padding(bottom = 24.dp),
+                        .fillMaxSize()
+                        .padding(padding),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Transcribing...")
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.segments.isEmpty() && !uiState.isRecording) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Tap \"Start Recording\" to begin",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(uiState.segments, key = { it.id }) { segment ->
+                        SegmentCard(
+                            segment = segment,
+                            isPlaying = segment.id == uiState.playingSegmentId,
+                            onPlayPause = {
+                                if (uiState.playingSegmentId == segment.id) {
+                                    viewModel.onPlaybackCompleted()
+                                } else {
+                                    viewModel.onPlaybackStarted(segment.id)
+                                }
+                            },
+                            onDelete = { viewModel.deleteSegment(segment.id) }
+                        )
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(100.dp))
                     }
                 }
             }
         }
-    ) { padding ->
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else if (uiState.segments.isEmpty() && !uiState.isRecording) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "Tap \"Start Recording\" to begin",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(uiState.segments, key = { it.id }) { segment ->
-                    SegmentCard(
-                        segment = segment,
-                        isPlaying = segment.id == uiState.playingSegmentId,
-                        onPlayPause = {
-                            if (uiState.playingSegmentId == segment.id) {
-                                viewModel.onPlaybackCompleted()
-                            } else {
-                                viewModel.onPlaybackStarted(segment.id)
-                            }
-                        },
-                        onDelete = { viewModel.deleteSegment(segment.id) }
-                    )
-                }
-                item {
-                    Spacer(modifier = Modifier.height(100.dp))
-                }
-            }
+
+        if (modelState.status != ModelStatus.Ready) {
+            ModelDownloadOverlay(
+                onModelReady = { viewModel.checkModel() }
+            )
         }
     }
 }
