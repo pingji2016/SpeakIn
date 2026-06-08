@@ -1,3 +1,6 @@
+import java.net.HttpURLConnection
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -101,4 +104,129 @@ dependencies {
 
 kapt {
     correctErrorTypes = true
+}
+
+// ============================================================
+// 模型下载任务
+// 用法: .\gradlew downloadWhisperModel   (下载 whisper ASR 模型, ~235MB)
+//       .\gradlew downloadLlmModel       (下载 Qwen3 润色模型, ~400MB)
+//       .\gradlew downloadAllModels      (下载全部模型)
+// ============================================================
+
+val whisperModelDir = rootProject.layout.projectDirectory.dir("whisper_models")
+val llmModelDir = rootProject.layout.projectDirectory.dir("llm_models")
+
+tasks.register("downloadWhisperModel") {
+    group = "SpeakIn"
+    description = "下载 whisper-tiny ExecuTorch 模型 (.pte) 到 whisper_models/ 目录 (~233 MB)"
+
+    doLast {
+        val dir = whisperModelDir.asFile
+        dir.mkdirs()
+
+        val files = mapOf(
+            "whisper_tiny_xnnpack_fp32.pte" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
+            "tokenizer.json" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
+        )
+
+        files.forEach { (filename, url) ->
+            val target = File(dir, filename)
+            if (target.exists() && target.length() > 1000) {
+                println("  ✅ 已存在，跳过: $filename (${target.length() / 1024 / 1024} MB)")
+                return@forEach
+            }
+
+            println("  ⏳ 下载: $filename ...")
+            try {
+                val connection = URI(url).toURL().openConnection() as HttpURLConnection
+                connection.connectTimeout = 30_000
+                connection.readTimeout = 120_000
+                connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
+                connection.connect()
+
+                if (connection.responseCode != 200) {
+                    throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
+                }
+
+                target.outputStream().use { output ->
+                    connection.inputStream.use { input ->
+                        input.copyTo(output, bufferSize = 8192)
+                    }
+                }
+
+                val sizeMb = target.length() / (1024.0 * 1024.0)
+                println("  ✅ 完成: $filename (${"%.1f".format(sizeMb)} MB)")
+            } catch (e: Exception) {
+                throw RuntimeException("下载 $filename 失败: ${e.message}", e)
+            }
+        }
+
+        println()
+        println("=".repeat(60))
+        println("  📁 模型文件: ${dir.absolutePath}")
+        println()
+        println("  推送到手机:")
+        println("    adb shell mkdir -p /data/data/com.speakin.app/files/whisper/")
+        println("    adb push ${dir.absolutePath}\\whisper_tiny_xnnpack_fp32.pte /data/data/com.speakin.app/files/whisper/")
+        println("    adb push ${dir.absolutePath}\\tokenizer.json /data/data/com.speakin.app/files/whisper/")
+        println("=".repeat(60))
+    }
+}
+
+tasks.register("downloadLlmModel") {
+    group = "SpeakIn"
+    description = "下载 Qwen3-0.6B-Q4_K_M GGUF 模型到 llm_models/ 目录"
+
+    doLast {
+        val dir = llmModelDir.asFile
+        dir.mkdirs()
+
+        val filename = "qwen3-0.6b-q4_k_m.gguf"
+        val url = "https://hf-mirror.com/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
+        val target = File(dir, filename)
+
+        if (target.exists() && target.length() > 100_000_000) {
+            println("  ✅ 已存在: $filename (${target.length() / 1024 / 1024} MB)")
+            return@doLast
+        }
+
+        println("  ⏳ 下载: $filename (~400 MB, 可能需要几分钟) ...")
+        try {
+            val connection = URI(url).toURL().openConnection() as HttpURLConnection
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 600_000
+            connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
+            connection.connect()
+
+            if (connection.responseCode != 200) {
+                throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
+            }
+
+            target.outputStream().use { output ->
+                connection.inputStream.use { input ->
+                    input.copyTo(output, bufferSize = 8192)
+                }
+            }
+
+            val sizeMb = target.length() / (1024.0 * 1024.0)
+            println("  ✅ 完成: $filename (${"%.1f".format(sizeMb)} MB)")
+        } catch (e: Exception) {
+            throw RuntimeException("下载 $filename 失败: ${e.message}", e)
+        }
+
+        println()
+        println("=".repeat(60))
+        println("  📁 模型文件: ${target.absolutePath}")
+        println()
+        println("  推送到手机:")
+        println("    adb shell mkdir -p /data/data/com.speakin.app/files/models/")
+        println("    adb push ${target.absolutePath} /data/data/com.speakin.app/files/models/")
+        println("=".repeat(60))
+    }
+}
+
+tasks.register("downloadAllModels") {
+    group = "SpeakIn"
+    description = "下载全部模型（whisper ASR + Qwen3 润色）"
+    dependsOn("downloadWhisperModel", "downloadLlmModel")
 }

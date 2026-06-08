@@ -25,18 +25,8 @@ class AsrModelManager @Inject constructor(
 
     companion object {
         private const val TAG = "AsrModelManager"
-
-        // 默认模型下载地址（HuggingFace 镜像站）
-        private const val ENCODER_URL =
-            "https://hf-mirror.com/davercn/whisper-small-executorch/resolve/main/whisper_encoder.pte"
-        private const val DECODER_URL =
-            "https://hf-mirror.com/davercn/whisper-small-executorch/resolve/main/whisper_decoder.pte"
-        private const val CONFIG_URL =
-            "https://hf-mirror.com/davercn/whisper-small-executorch/resolve/main/whisper_config.json"
-        private const val TOKENIZER_URL =
-            "https://hf-mirror.com/davercn/whisper-small-executorch/resolve/main/tokenizer.json"
-
-        // 本地缓存目录名
+        private const val MODEL_PTE = "whisper_tiny_xnnpack_fp32.pte"
+        private const val MODEL_TOKENIZER = "tokenizer.json"
         private const val MODEL_DIR_NAME = "whisper"
     }
 
@@ -65,9 +55,8 @@ class AsrModelManager @Inject constructor(
      */
     fun isModelReady(): Boolean {
         val dir = getModelDir()
-        return File(dir, "whisper_encoder.pte").exists() &&
-                File(dir, "whisper_decoder.pte").exists() &&
-                File(dir, "whisper_config.json").exists()
+        return File(dir, MODEL_PTE).exists() &&
+                File(dir, MODEL_TOKENIZER).exists()
     }
 
     /**
@@ -79,10 +68,8 @@ class AsrModelManager @Inject constructor(
 
         try {
             val files = listOf(
-                "whisper_encoder.pte" to ENCODER_URL,
-                "whisper_decoder.pte" to DECODER_URL,
-                "whisper_config.json" to CONFIG_URL,
-                "tokenizer.json" to TOKENIZER_URL
+                MODEL_PTE to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
+                MODEL_TOKENIZER to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
             )
 
             var completed = 0

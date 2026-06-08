@@ -9,61 +9,60 @@ import java.io.File
 /**
  * ExecuTorch Whisper 推理引擎。
  *
- * 加载 PC 端导出的 .pte 文件（whisper_encoder.pte + whisper_decoder.pte），
- * 在 Android 上运行完整的 whisper 推理：
- *   audio PCM → mel 频谱 → encoder → decoder (auto-regressive) → token IDs → text
+ * 使用 software-mansion 预导出模型（单个 .pte 文件，含 encode/decode 两个方法）。
+ * 模型直接接收原始 PCM 音频，内部处理 mel 频谱计算。
+ *
+ * 模型方法签名:
+ *   encode(float32[1, 480000]) → float32[1, 1500, 384]
+ *   decode(int64[1, 128], int64[128], float32[1, 1500, 384]) → float32[1, 128, 51865]
  */
 class ExecuTorchWhisperEngine {
 
-    private var encoderModule: Module? = null
-    private var decoderModule: Module? = null
-    private var config: WhisperConfig? = null
+    private var module: Module? = null
     private var tokenizer: WhisperTokenizer? = null
 
     var isLoaded: Boolean = false
         private set
 
+    companion object {
+        private const val TAG = "ExecuTorchWhisper"
+        private const val N_SAMPLES = 480000       // 30s @ 16kHz
+        private const val MAX_DECODE_LEN = 128      // 最大 token 数
+        private const val EOT_TOKEN = 50257
+        private const val SOT_TOKEN = 50258
+        private const val SOT_ZH_TOKEN = 50319
+        private const val TRANSCRIBE_TOKEN = 50362
+        private const val NOTIMESTAMPS_TOKEN = 50363
+        private const val VOCAB_SIZE = 51865
+    }
+
     /**
      * 加载 .pte 模型文件和 tokenizer。
      */
-    fun load(modelDir: File, configFile: File? = null, tokenizerFile: File? = null): Boolean {
+    fun load(modelDir: File): Boolean {
         return try {
-            val encoderFile = File(modelDir, "whisper_encoder.pte")
-            if (!encoderFile.exists()) {
-                Log.e(TAG, "encoder .pte not found: ${encoderFile.absolutePath}")
+            val pteFile = File(modelDir, "whisper_tiny_xnnpack_fp32.pte")
+            if (!pteFile.exists()) {
+                Log.e(TAG, ".pte not found: ${pteFile.absolutePath}")
                 return false
             }
-            encoderModule = Module.load(encoderFile.absolutePath)
-            Log.i(TAG, "Encoder loaded: ${encoderFile.absolutePath}")
 
-            val decoderFile = File(modelDir, "whisper_decoder.pte")
-            if (!decoderFile.exists()) {
-                Log.e(TAG, "decoder .pte not found: ${decoderFile.absolutePath}")
-                return false
-            }
-            decoderModule = Module.load(decoderFile.absolutePath)
-            Log.i(TAG, "Decoder loaded: ${decoderFile.absolutePath}")
+            module = Module.load(pteFile.absolutePath)
+            Log.i(TAG, "Model loaded: ${pteFile.absolutePath}")
 
-            config = if (configFile?.exists() == true) {
-                WhisperConfig.fromFile(configFile)
-            } else {
-                val defaultConfig = File(modelDir, "whisper_config.json")
-                if (defaultConfig.exists()) WhisperConfig.fromFile(defaultConfig)
-                else WhisperConfig()
-            }
+            // 检查方法是否存在
+            val methods = module!!.getMethods()
+            Log.i(TAG, "Available methods: ${methods.joinToString()}")
 
-            tokenizer = if (tokenizerFile?.exists() == true) {
-                WhisperTokenizer(tokenizerFile)
-            } else {
-                val defaultTokenizer = File(modelDir, "tokenizer.json")
-                val vocabFile = File(modelDir, "vocab.json")
-                when {
-                    defaultTokenizer.exists() -> WhisperTokenizer(defaultTokenizer)
-                    vocabFile.exists() -> WhisperTokenizer(vocabFile)
-                    else -> {
-                        Log.w(TAG, "No tokenizer found")
-                        null
-                    }
+            // 加载 tokenizer
+            val tokenizerFile = File(modelDir, "tokenizer.json")
+            val vocabFile = File(modelDir, "vocab.json")
+            tokenizer = when {
+                tokenizerFile.exists() -> WhisperTokenizer(tokenizerFile)
+                vocabFile.exists() -> WhisperTokenizer(vocabFile)
+                else -> {
+                    Log.w(TAG, "No tokenizer found, will return raw token IDs")
+                    null
                 }
             }
 
@@ -77,177 +76,159 @@ class ExecuTorchWhisperEngine {
     }
 
     /**
-     * 转写音频文件为文本。
+     * 转写音频为文本。
      */
     fun transcribe(
         audioPcm: FloatArray,
         onProgress: ((Float) -> Unit)? = null
     ): String? {
-        if (!isLoaded || encoderModule == null || decoderModule == null || config == null) {
+        if (!isLoaded || module == null) {
             Log.e(TAG, "Engine not loaded")
             return null
         }
 
-        val cfg = config!!
-        val melSpec = MelSpectrogram(
-            sampleRate = cfg.sampleRate,
-            fftSize = cfg.fftSize,
-            hopLength = cfg.hopLength,
-            windowLength = cfg.windowLength,
-            nMelBins = cfg.nMelBins
-        )
-
         onProgress?.invoke(0.0f)
 
-        // Step 1: 计算 mel 频谱
-        var mel = melSpec.compute(audioPcm)
-        if (mel.isEmpty()) {
-            Log.w(TAG, "Audio too short")
-            return ""
-        }
-        mel = melSpec.normalize(mel)
-        Log.i(TAG, "Mel spectrogram: ${mel.size} bands x ${mel[0].size} frames")
+        // Step 1: 准备音频输入（填充或截断到 480000 采样点）
+        val audioInput = prepareAudio(audioPcm)
+        Log.i(TAG, "Audio prepared: ${audioInput.size} samples")
         onProgress?.invoke(0.1f)
 
-        // Step 2: 编码器推理
-        val melFlat = melSpec.flatten(mel)
-        val melShape = longArrayOf(1, cfg.nMelBins.toLong(), mel[0].size.toLong())
-        val melTensor = Tensor.fromBlob(melFlat, melShape)
-
-        val encoderResults: Array<EValue>
-        try {
-            encoderResults = encoderModule!!.forward(EValue.from(melTensor))
-        } catch (e: Exception) {
-            Log.e(TAG, "Encoder forward failed", e)
-            return null
-        }
-
-        val encoderOutputTensor = encoderResults[0].toTensor()
+        // Step 2: Encoder 推理
+        val encoderOutput = runEncode(audioInput) ?: return null
+        Log.i(TAG, "Encoder done")
         onProgress?.invoke(0.4f)
 
-        // Step 3: 解码器自回归推理
-        val tokenIds = autoregressiveDecode(encoderOutputTensor, cfg) ?: return null
+        // Step 3: Decoder 自回归推理
+        val tokenIds = runDecode(encoderOutput) ?: return null
         onProgress?.invoke(0.9f)
 
-        // Step 4: 解码 token → 文本
-        val text = if (tokenizer != null) {
-            tokenizer!!.decode(tokenIds)
-        } else {
-            tokenIds.joinToString(",")
-        }
-
+        // Step 4: Token → 文本
+        val text = tokenizer?.decode(tokenIds) ?: tokenIds.joinToString(",")
         onProgress?.invoke(1.0f)
+
         return text
     }
 
-    private fun autoregressiveDecode(
-        encoderOutputTensor: Tensor,
-        cfg: WhisperConfig
-    ): List<Int>? {
-        val decoder = decoderModule ?: return null
+    // ============================================================
+    // 音频预处理
+    // ============================================================
 
-        val tokens = mutableListOf<Int>()
-        tokens.addAll(tokenizer?.getSotTokens("zh") ?: listOf(cfg.sotToken))
-        tokens.add(NOTIMESTAMPS_TOKEN)
+    private fun prepareAudio(audio: FloatArray): FloatArray {
+        return if (audio.size >= N_SAMPLES) {
+            audio.copyOf(N_SAMPLES)
+        } else {
+            val padded = FloatArray(N_SAMPLES)
+            System.arraycopy(audio, 0, padded, 0, audio.size)
+            padded
+        }
+    }
 
-        val maxTokens = cfg.nTextCtx
+    // ============================================================
+    // Encoder
+    // ============================================================
 
-        for (step in tokens.size until maxTokens) {
-            val tokenArray = tokens.toIntArray()
-            val tokenTensor = Tensor.fromBlob(tokenArray, longArrayOf(1, tokenArray.size.toLong()))
+    private fun runEncode(audio: FloatArray): Tensor? {
+        val mod = module ?: return null
 
-            val results: Array<EValue>
-            try {
-                results = decoder.forward(
-                    EValue.from(tokenTensor),
-                    EValue.from(encoderOutputTensor)
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Decoder forward failed at step $step", e)
-                break
-            }
+        return try {
+            val audioTensor = Tensor.fromBlob(audio, longArrayOf(1, N_SAMPLES.toLong()))
+            val result = mod.execute("encode", EValue.from(audioTensor))
+            result[0].toTensor()
+        } catch (e: Exception) {
+            Log.e(TAG, "Encode failed", e)
+            null
+        }
+    }
 
-            val logitsTensor = results[0].toTensor()
-            val logitsData = logitsTensor.dataAsFloatArray
+    // ============================================================
+    // Decoder 自回归
+    // ============================================================
 
-            val vocabSize = logitsData.size / tokenArray.size
-            val lastLogits = logitsData.copyOfRange(
-                (tokenArray.size - 1) * vocabSize,
-                tokenArray.size * vocabSize
-            )
+    private fun runDecode(encoderOutput: Tensor): List<Int>? {
+        val mod = module ?: return null
 
-            val nextToken = argmax(lastLogits)
+        // 初始化 token 序列
+        val tokens = mutableListOf<Int>(
+            SOT_TOKEN,
+            SOT_ZH_TOKEN,
+            TRANSCRIBE_TOKEN,
+            NOTIMESTAMPS_TOKEN
+        )
 
-            if (tokenizer?.isEndOfText(nextToken) == true || nextToken == cfg.eotToken) {
+        // 自回归解码
+        for (step in tokens.size until MAX_DECODE_LEN) {
+            val nextToken = decodeOneStep(mod, tokens, encoderOutput)
+                ?: break
+
+            if (nextToken == EOT_TOKEN) {
+                Log.d(TAG, "EOT at step $step")
                 break
             }
 
             tokens.add(nextToken)
         }
 
-        val sotTokens = tokenizer?.getSotTokens("zh") ?: listOf(cfg.sotToken)
-        return tokens.filter { it !in sotTokens && it != NOTIMESTAMPS_TOKEN }
+        // 过滤起始特殊 token
+        val sotTokens = setOf(SOT_TOKEN, SOT_ZH_TOKEN, TRANSCRIBE_TOKEN, NOTIMESTAMPS_TOKEN)
+        return tokens.filter { it !in sotTokens }
     }
 
-    private fun argmax(array: FloatArray): Int {
-        var maxIdx = 0
-        var maxVal = array[0]
-        for (i in 1 until array.size) {
-            if (array[i] > maxVal) {
-                maxVal = array[i]
-                maxIdx = i
+    private fun decodeOneStep(
+        mod: Module,
+        tokens: List<Int>,
+        encoderOutput: Tensor
+    ): Int? {
+        return try {
+            val n = tokens.size
+
+            // [1, 128] token 张量，不足用 EOT 填充
+            val tokenArr = LongArray(MAX_DECODE_LEN) { i ->
+                if (i < n) tokens[i].toLong() else EOT_TOKEN.toLong()
             }
+            val tokenTensor = Tensor.fromBlob(tokenArr, longArrayOf(1, MAX_DECODE_LEN.toLong()))
+
+            // [128] attention mask，有效位置 1
+            val maskArr = LongArray(MAX_DECODE_LEN) { i ->
+                if (i < n) 1L else 0L
+            }
+            val maskTensor = Tensor.fromBlob(maskArr, longArrayOf(MAX_DECODE_LEN.toLong()))
+
+            // decode forward
+            val result = mod.execute(
+                "decode",
+                EValue.from(tokenTensor),
+                EValue.from(maskTensor),
+                EValue.from(encoderOutput)
+            )
+
+            // 输出: [1, 128, 51865]
+            val logitsData = result[0].toTensor().dataAsFloatArray
+
+            // 取最后一个有效 token 的 logits
+            val offset = (n - 1) * VOCAB_SIZE
+            val lastLogits = logitsData.copyOfRange(offset, offset + VOCAB_SIZE)
+
+            // argmax
+            var maxIdx = 0
+            var maxVal = lastLogits[0]
+            for (i in 1 until lastLogits.size) {
+                if (lastLogits[i] > maxVal) {
+                    maxVal = lastLogits[i]
+                    maxIdx = i
+                }
+            }
+            maxIdx
+        } catch (e: Exception) {
+            Log.e(TAG, "Decode step failed at ${tokens.size}", e)
+            null
         }
-        return maxIdx
     }
 
     fun release() {
-        encoderModule?.destroy()
-        decoderModule?.destroy()
-        encoderModule = null
-        decoderModule = null
+        module?.destroy()
+        module = null
         isLoaded = false
         Log.i(TAG, "Whisper engine released")
-    }
-
-    data class WhisperConfig(
-        val nMelBins: Int = 80,
-        val nAudioCtx: Int = 1500,
-        val nTextCtx: Int = 448,
-        val dModel: Int = 768,
-        val sampleRate: Int = 16000,
-        val fftSize: Int = 400,
-        val hopLength: Int = 160,
-        val windowLength: Int = 400,
-        val sotToken: Int = 50258,
-        val eotToken: Int = 50257
-    ) {
-        companion object {
-            fun fromFile(file: File): WhisperConfig {
-                return try {
-                    val json = org.json.JSONObject(file.readText())
-                    WhisperConfig(
-                        nMelBins = json.optInt("n_mel_bins", 80),
-                        nAudioCtx = json.optInt("n_audio_ctx", 1500),
-                        nTextCtx = json.optInt("n_text_ctx", 448),
-                        dModel = json.optInt("d_model", 768),
-                        sampleRate = json.optInt("sample_rate", 16000),
-                        fftSize = json.optInt("fft_size", 400),
-                        hopLength = json.optInt("hop_length", 160),
-                        windowLength = json.optInt("window_length", 400),
-                        sotToken = json.optInt("sot_token", 50258),
-                        eotToken = json.optInt("eot_token", 50257)
-                    )
-                } catch (e: Exception) {
-                    Log.w("WhisperConfig", "Failed to parse config, using defaults", e)
-                    WhisperConfig()
-                }
-            }
-        }
-    }
-
-    companion object {
-        private const val TAG = "ExecuTorchWhisper"
-        private const val NOTIMESTAMPS_TOKEN = 50363
     }
 }
