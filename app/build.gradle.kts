@@ -87,6 +87,9 @@ dependencies {
     // ExoPlayer
     implementation(libs.exoplayer.core)
 
+    // ExecuTorch
+    implementation(libs.executorch.core)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
