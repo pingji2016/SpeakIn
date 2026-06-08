@@ -7,33 +7,111 @@ SpeakIn 使用 **ExecuTorch**（PyTorch 的移动端推理框架）运行 **Open
 ### 核心架构
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    PC端（导出阶段）                     │
-│                                                      │
-│  PyTorch Whisper模型 ──→ torch.export ──→ .pte文件     │
-│  (torchaudio)          (ExecuTorch)                   │
-│                                                      │
-│  导出产物: whisper_encoder.pte + whisper_decoder.pte   │
-│           whisper_config.json + tokenizer.json        │
-└──────────────────────────────────────────────────────┘
-                          │
-                          ▼ ADB push
-┌──────────────────────────────────────────────────────┐
-│                   Android端（推理阶段）                  │
-│                                                      │
-│  PCM音频 ──→ MelSpectrogram(Kotlin) ──→ Encoder(.pte) │
-│                                              │        │
-│                                              ▼        │
-│                                   Decoder(.pte) ←─────│
-│                                   (自回归 argmax)      │
-│                                              │        │
-│                                              ▼        │
-│                                      Tokenizer         │
-│                                      (BPE解码)         │
-│                                              │        │
-│                                              ▼        │
-│                                          文本结果       │
-└──────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                     PC端（模型获取）                         │
+│                                                           │
+│  方案一：Gradle Task 自动下载                                │
+│    .\gradlew downloadWhisperModel                          │
+│    ─────────────────────────────────────────────────       │
+│    从 HuggingFace 镜像站下载:                                │
+│    ├─ whisper_tiny_xnnpack_fp32.pte  (233 MB, 单文件)       │
+│    └─ tokenizer.json                  (2.5 MB)             │
+│                                                           │
+│  方案二：自行导出（需要 torch + executorch）                  │
+│    python export_whisper_pte.py --model tiny               │
+└───────────────────────────────────────────────────────────┘
+                           │
+                           ▼ ADB push
+┌───────────────────────────────────────────────────────────┐
+│                    Android端（推理阶段）                     │
+│                                                           │
+│  录音(16kHz WAV) ──→ 读PCM ──→ 填充至480000 ──→ encode()  │
+│                                              │            │
+│                                              ▼            │
+│   ┌─── 自回归循环 ─────────────────────────────────┐       │
+│   │   decode(tokens + mask + encoder_output)       │       │
+│   │        ↓                                       │       │
+│   │   argmax(logits) → nextToken                   │       │
+│   │        ↓                                       │       │
+│   │   nextToken == EOT? ──是──→ 结束               │       │
+│   │       否                                       │       │
+│   │   tokens.add(nextToken)                        │       │
+│   └────────────────────────────────────────────────       │
+│                           │                               │
+│                           ▼                               │
+│                   Tokenizer.decode(IDs)                    │
+│                           │                               │
+│                           ▼                               │
+│                        文本结果                             │
+└───────────────────────────────────────────────────────────┘
+```
+
+<br>
+
+### 语音识别完整流程图
+
+```mermaid
+flowchart TB
+    subgraph PC["💻 PC端"]
+        A["Gradle Task<br/>downloadWhisperModel"] --> B["下载 .pte + tokenizer<br/>from HuggingFace<br/>(镜像站 hf-mirror.com)"]
+        B --> C["whisper_tiny_xnnpack_fp32.pte<br/>tokenizer.json"]
+    end
+
+    subgraph ADB["🔗 部署"]
+        C --> D["adb push →<br/>/data/data/.../files/whisper/"]
+    end
+
+    subgraph Android["📱 Android 端运行时"]
+        E["用户点击录音<br/>AudioRecord 采集 16kHz PCM"] --> F["AsrEngineImpl<br/>readAudioFile()"]
+        F --> G["ExecuTorchWhisperEngine<br/>transcribe()"]
+        
+        G --> H["prepareAudio()<br/>填充/截断到 480000 采样点<br/>(= 30秒 @ 16kHz)"]
+        H --> I["module.execute('encode', audioTensor)<br/>Encoder 推理"]
+        I --> J["输出: encoder_output<br/>shape=[1, 1500, 384]<br/>音频特征向量"]
+
+        J --> K["初始化 token 序列<br/>[SOT, SOT_ZH, TRANSCRIBE, NOTIMESTAMPS]"]
+        
+        K --> L["decode_one_step()"]
+        L --> M["构造 [1,128] token 张量<br/>不足位用 EOT 填充"]
+        M --> N["构造 [128] attention mask<br/>有效位置 1，padding 位置 0"]
+        N --> O["module.execute('decode',<br/>tokens, mask, encoder_output)"]
+        O --> P["输出 logits: [1, 128, 51865]<br/>取最后一个有效 token 的 logits"]
+        P --> Q["argmax 采样 → nextToken"]
+
+        Q --> R{"nextToken == EOT?"}
+        R -- 否 --> S["tokens.add(nextToken)"]
+        S --> L
+        
+        R -- 是 --> T["自回归结束"]
+        
+        T --> U["tokenizer.decode(tokenIds)<br/>过滤特殊 token → 文本"]
+    end
+
+    subgraph Output["📝 输出"]
+        U --> V["转写文本结果<br/>（中文/英文/数字等）"]
+    end
+
+    style A fill:#6366f1,color:#fff
+    style B fill:#818cf8,color:#fff
+    style C fill:#a5b4fc,color:#fff
+    style D fill:#f59e0b,color:#fff
+    style E fill:#10b981,color:#fff
+    style F fill:#34d399,color:#fff
+    style G fill:#6ee7b7,color:#fff
+    style H fill:#3b82f6,color:#fff
+    style I fill:#60a5fa,color:#fff
+    style J fill:#93c5fd,color:#fff
+    style K fill:#f472b6,color:#fff
+    style L fill:#ec4899,color:#fff
+    style M fill:#f9a8d4,color:#fff
+    style N fill:#f9a8d4,color:#fff
+    style O fill:#f472b6,color:#fff
+    style P fill:#ec4899,color:#fff
+    style Q fill:#f9a8d4,color:#fff
+    style R fill:#ef4444,color:#fff
+    style T fill:#f87171,color:#fff
+    style U fill:#6366f1,color:#fff
+    style V fill:#8b5cf6,color:#fff
 ```
 
 ---
