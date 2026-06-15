@@ -9,14 +9,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.TextSnippet
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
@@ -41,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.speakin.app.data.local.entity.SegmentEntity
@@ -83,12 +87,20 @@ fun NoteDetailScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
-                            Text(uiState.note?.title ?: "Note")
+                            Text(
+                                uiState.note?.title?.ifEmpty { "未命名笔记" } ?: "笔记",
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
                         }
                     },
                     actions = {
@@ -101,8 +113,9 @@ fun NoteDetailScreen(
                             editingTitle = !editingTitle
                         }) {
                             Icon(
-                                if (editingTitle) Icons.Default.Stop else Icons.AutoMirrored.Filled.TextSnippet,
-                                contentDescription = if (editingTitle) "Save" else "Edit title"
+                                if (editingTitle) Icons.Default.Stop else Icons.Default.Edit,
+                                contentDescription = if (editingTitle) "保存" else "编辑标题",
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     },
@@ -125,14 +138,24 @@ fun NoteDetailScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
-                            .padding(bottom = 24.dp),
+                            .padding(20.dp)
+                            .padding(bottom = 28.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Transcribing...")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "正在转写...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -154,11 +177,13 @@ fun NoteDetailScreen(
                         .padding(padding),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "Tap \"Start Recording\" to begin",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "点击下方按钮开始录音",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
@@ -168,6 +193,7 @@ fun NoteDetailScreen(
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    item { Spacer(modifier = Modifier.height(4.dp)) }
                     items(uiState.segments, key = { it.id }) { segment ->
                         SegmentCard(
                             segment = segment,
@@ -183,7 +209,7 @@ fun NoteDetailScreen(
                         )
                     }
                     item {
-                        Spacer(modifier = Modifier.height(100.dp))
+                        Spacer(modifier = Modifier.height(120.dp))
                     }
                 }
             }
@@ -206,51 +232,94 @@ private fun SegmentCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // 顶部操作栏
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                IconButton(onClick = onPlayPause) {
+                // 播放/暂停按钮
+                IconButton(
+                    onClick = onPlayPause,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .then(Modifier.clip(CircleShape))
+                ) {
                     Icon(
                         if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Stop" else "Play",
-                        tint = MaterialTheme.colorScheme.primary
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
+
                 Text(
                     text = formatDuration(segment.durationMs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onDelete) {
+
+                // 删除按钮
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete segment",
-                        tint = MaterialTheme.colorScheme.error
+                        Icons.Default.DeleteOutline,
+                        contentDescription = "删除片段",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
+            // ASR 转写文本
             if (segment.rawText.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = segment.rawText,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .then(Modifier.clip(RoundedCornerShape(8.dp)))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = segment.rawText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
+            // 润色文本
             if (segment.polishedText.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = segment.polishedText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .then(Modifier.clip(RoundedCornerShape(8.dp)))
+                        .padding(12.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = segment.polishedText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                if (segment.rawText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
             }
         }
     }

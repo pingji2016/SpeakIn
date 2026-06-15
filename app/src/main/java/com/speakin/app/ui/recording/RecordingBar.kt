@@ -20,7 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,16 +55,22 @@ fun RecordingBar(
     )
 
     val recordingColor = SpeakInRecording.copy(alpha = pulseAlpha)
+    val containerColor by animateColorAsState(
+        targetValue = if (isRecording) SpeakInRecording.copy(alpha = 0.08f)
+                      else MaterialTheme.colorScheme.surface,
+        label = "container"
+    )
 
     Card(
         modifier = modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (!isRecording) {
@@ -73,31 +79,35 @@ fun RecordingBar(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SpeakInRecording
                     ),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.height(52.dp)
                 ) {
                     Icon(
-                        Icons.Default.Mic,
+                        Icons.Default.FiberManualRecord,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Start Recording")
+                    Text(
+                        "开始录音",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // 脉冲红点
                     Box(
                         modifier = Modifier
                             .size(12.dp)
                             .clip(CircleShape)
                             .background(recordingColor)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        "Recording...",
+                        "录音中...",
                         style = MaterialTheme.typography.titleMedium,
                         color = SpeakInRecording
                     )
@@ -107,15 +117,16 @@ fun RecordingBar(
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SpeakInRecording
                         ),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.height(44.dp)
                     ) {
                         Icon(
                             Icons.Default.Stop,
-                            contentDescription = "Stop",
-                            modifier = Modifier.size(20.dp)
+                            contentDescription = "停止",
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Stop")
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("停止")
                     }
                 }
             }
