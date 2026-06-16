@@ -7,6 +7,8 @@ import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
 import com.speakin.app.data.repository.NoteRepository
+import com.speakin.app.di.AudioDir
+import com.speakin.app.di.ImageDir
 import com.speakin.app.domain.asr.AsrEngine
 import com.speakin.app.domain.audio.AudioPlayer
 import com.speakin.app.domain.audio.AudioRecorder
@@ -41,8 +43,8 @@ class NoteDetailViewModel @Inject constructor(
     private val audioPlayer: AudioPlayer,
     private val asrEngine: AsrEngine,
     private val polishEngine: PolishEngine,
-    private val audioOutputDir: File,
-    private val imageOutputDir: File,
+    @AudioDir private val audioOutputDir: File,
+    @ImageDir private val imageOutputDir: File,
     private val modelManager: ModelManager
 ) : ViewModel() {
 

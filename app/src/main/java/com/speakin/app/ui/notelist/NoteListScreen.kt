@@ -22,16 +22,19 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -58,10 +61,13 @@ import java.util.Locale
 @Composable
 fun NoteListScreen(
     onNavigateToDetail: (String) -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     viewModel: NoteListViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showDeleteConfirm by remember { mutableStateOf<String?>(null) }
+    var selectedNoteId by remember { mutableStateOf<String?>(null) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameText by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -79,6 +85,15 @@ fun NoteListScreen(
                         stringResource(R.string.note_list_title),
                         style = MaterialTheme.typography.titleLarge
                     )
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -162,7 +177,11 @@ fun NoteListScreen(
                     NoteCard(
                         note = note,
                         onClick = { onNavigateToDetail(note.id) },
-                        onLongClick = { showDeleteConfirm = note.id },
+                        onLongClick = {
+                            selectedNoteId = note.id
+                            renameText = note.title
+                            showRenameDialog = true
+                        },
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(400),
                             fadeOutSpec = tween(300)
@@ -173,21 +192,51 @@ fun NoteListScreen(
             }
         }
 
-        if (showDeleteConfirm != null) {
+        // Rename dialog (with delete option)
+        if (showRenameDialog && selectedNoteId != null) {
             AlertDialog(
-                onDismissRequest = { showDeleteConfirm = null },
-                title = { Text(stringResource(R.string.delete_note_title)) },
-                text = { Text(stringResource(R.string.delete_note_message)) },
+                onDismissRequest = {
+                    showRenameDialog = false
+                    selectedNoteId = null
+                },
+                title = { Text(stringResource(R.string.rename_note_title)) },
+                text = {
+                    Column {
+                        TextField(
+                            value = renameText,
+                            onValueChange = { renameText = it },
+                            singleLine = true,
+                            placeholder = { Text(stringResource(R.string.untitled_note)) }
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(
+                            onClick = {
+                                showRenameDialog = false
+                                selectedNoteId?.let { viewModel.deleteNote(it) }
+                                selectedNoteId = null
+                            }
+                        ) {
+                            Text(
+                                stringResource(R.string.delete_note),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                },
                 confirmButton = {
                     TextButton(onClick = {
-                        showDeleteConfirm?.let { viewModel.deleteNote(it) }
-                        showDeleteConfirm = null
+                        selectedNoteId?.let { viewModel.renameNote(it, renameText) }
+                        showRenameDialog = false
+                        selectedNoteId = null
                     }) {
-                        Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.rename))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = null }) {
+                    TextButton(onClick = {
+                        showRenameDialog = false
+                        selectedNoteId = null
+                    }) {
                         Text(stringResource(R.string.cancel))
                     }
                 }

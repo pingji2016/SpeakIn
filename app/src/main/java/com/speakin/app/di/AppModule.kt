@@ -15,6 +15,7 @@ object AppModule {
 
     @Provides
     @Singleton
+    @AudioDir
     fun provideAudioOutputDir(@ApplicationContext context: Context): File {
         val dir = File(context.filesDir, "audio_records")
         if (!dir.exists()) dir.mkdirs()
@@ -23,6 +24,7 @@ object AppModule {
 
     @Provides
     @Singleton
+    @ImageDir
     fun provideImageOutputDir(@ApplicationContext context: Context): File {
         val dir = File(context.filesDir, "images")
         if (!dir.exists()) dir.mkdirs()

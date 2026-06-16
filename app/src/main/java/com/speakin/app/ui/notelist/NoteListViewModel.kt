@@ -57,4 +57,10 @@ class NoteListViewModel @Inject constructor(
             repository.deleteNote(noteId)
         }
     }
+
+    fun renameNote(noteId: String, newTitle: String) {
+        viewModelScope.launch {
+            repository.updateNoteTitle(noteId, newTitle)
+        }
+    }
 }

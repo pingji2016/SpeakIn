@@ -49,6 +49,9 @@
     <!-- Common -->
     <string name="delete">删除</string>
     <string name="cancel">取消</string>
+    <string name="rename_note_title">重命名笔记</string>
+    <string name="rename">重命名</string>
+    <string name="delete_note">删除笔记</string>
     <string name="delete_note_title">删除笔记</string>
     <string name="delete_note_message">确定要删除这条笔记吗？此操作不可撤销。</string>
     <string name="delete_block_title">删除内容块</string>

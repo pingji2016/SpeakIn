@@ -1,15 +1,18 @@
 package com.speakin.app.ui.notedetail
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,7 +55,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,20 +63,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.core.content.ContextCompat
 import com.speakin.app.R
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
-import com.speakin.app.domain.llm.ModelStatus
-import com.speakin.app.ui.modeldownload.ModelDownloadOverlay
-import com.speakin.app.ui.recording.RecordingBar
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,17 +87,16 @@ fun NoteDetailScreen(
     viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val modelState by viewModel.modelState.collectAsState()
     var editingTitle by remember { mutableStateOf(false) }
     var titleText by remember { mutableStateOf("") }
     var showAddMenu by remember { mutableStateOf(false) }
+    var fullscreenImagePath by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
-    // Image picker
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val context = LocalContext.current
             val tempFile = File(context.cacheDir, "pick_${System.currentTimeMillis()}.jpg")
             context.contentResolver.openInputStream(it)?.use { input ->
                 tempFile.outputStream().use { output -> input.copyTo(output) }
@@ -102,15 +105,60 @@ fun NoteDetailScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.checkModel()
+    // Microphone permission
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) viewModel.startRecording()
     }
 
-    val fabRotation by animateFloatAsState(
-        targetValue = if (showAddMenu) 45f else 0f,
-        animationSpec = tween(200),
-        label = "fabRotate"
-    )
+    fun requestMicThenRecord() {
+        val perm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+        if (perm == PackageManager.PERMISSION_GRANTED) {
+            viewModel.startRecording()
+        } else {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Fullscreen image dialog
+    fullscreenImagePath?.let { path ->
+        Dialog(
+            onDismissRequest = { fullscreenImagePath = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { fullscreenImagePath = null },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(File(path))
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Fullscreen image",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+                IconButton(
+                    onClick = { fullscreenImagePath = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -174,42 +222,8 @@ fun NoteDetailScreen(
                     )
                 )
             },
-            bottomBar = {
-                if (!uiState.isTranscribing) {
-                    RecordingBar(
-                        isRecording = uiState.isRecording,
-                        onStartRecording = { showAddMenu = false; viewModel.startRecording() },
-                        onStopRecording = { viewModel.stopRecording() }
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                            .padding(bottom = 28.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.5.dp
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                stringResource(R.string.transcribing),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            },
             floatingActionButton = {
                 Column(horizontalAlignment = Alignment.End) {
-                    // Expandable sub-FABs
                     AnimatedVisibility(
                         visible = showAddMenu,
                         enter = scaleIn() + fadeIn(),
@@ -219,7 +233,6 @@ fun NoteDetailScreen(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Text block FAB
                             SmallFab(
                                 icon = Icons.Default.TextFields,
                                 label = stringResource(R.string.add_text),
@@ -228,7 +241,6 @@ fun NoteDetailScreen(
                                     showAddMenu = false
                                 }
                             )
-                            // Image block FAB
                             SmallFab(
                                 icon = Icons.Default.Image,
                                 label = stringResource(R.string.add_image),
@@ -237,12 +249,19 @@ fun NoteDetailScreen(
                                     showAddMenu = false
                                 }
                             )
+                            SmallFab(
+                                icon = Icons.Default.Mic,
+                                label = stringResource(R.string.add_voice),
+                                onClick = {
+                                    showAddMenu = false
+                                    requestMicThenRecord()
+                                }
+                            )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Main FAB
                     FloatingActionButton(
                         onClick = {
                             if (uiState.isRecording) {
@@ -272,7 +291,25 @@ fun NoteDetailScreen(
                 }
             }
         ) { padding ->
-            if (uiState.isLoading) {
+            if (uiState.isTranscribing) {
+                // Transcribing banner
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.transcribing),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else if (uiState.isLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -326,21 +363,14 @@ fun NoteDetailScreen(
                             )
                             BlockType.IMAGE -> ImageBlockView(
                                 block = block,
+                                onImageClick = { fullscreenImagePath = block.imageFilePath },
                                 onDelete = { viewModel.deleteBlock(block.id) }
                             )
                         }
                     }
-                    item {
-                        Spacer(modifier = Modifier.height(120.dp))
-                    }
+                    item { Spacer(modifier = Modifier.height(120.dp)) }
                 }
             }
-        }
-
-        if (modelState.status != ModelStatus.Ready) {
-            ModelDownloadOverlay(
-                onModelReady = { viewModel.checkModel() }
-            )
         }
     }
 }
@@ -360,9 +390,7 @@ private fun VoiceBlockView(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -371,9 +399,7 @@ private fun VoiceBlockView(
             ) {
                 IconButton(
                     onClick = onPlayPause,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
                 ) {
                     Icon(
                         if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
@@ -383,15 +409,12 @@ private fun VoiceBlockView(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-
                 Text(
                     text = formatDuration(block.durationMs ?: 0L),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
                 Spacer(modifier = Modifier.weight(1f))
-
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Default.DeleteOutline,
@@ -408,6 +431,7 @@ private fun VoiceBlockView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         .padding(12.dp)
                 ) {
                     Text(
@@ -418,12 +442,13 @@ private fun VoiceBlockView(
                 }
             }
 
-            if (!block.polishedText.isNullOrEmpty()) {
+            if (!block.polishedText.isNullOrEmpty() && block.polishedText != block.transcription) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
                         .padding(12.dp)
                 ) {
                     Text(
@@ -438,7 +463,7 @@ private fun VoiceBlockView(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Text Block
+// Text Block (multi-line)
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
@@ -451,15 +476,20 @@ private fun TextBlockView(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
+                Icon(
+                    Icons.Default.TextFields,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.DeleteOutline,
@@ -481,49 +511,71 @@ private fun TextBlockView(
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedIndicatorColor = MaterialTheme.colorScheme.secondary,
-                    unfocusedIndicatorColor = MaterialTheme.colorScheme.surface
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp),
-                minLines = 2
+                minLines = 3
             )
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Image Block
+// Image Block (thumbnail + tap to fullscreen)
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
 private fun ImageBlockView(
     block: ContentBlockEntity,
+    onImageClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column {
-            // Image
+            // Thumbnail image — constrained height, tap to view fullscreen
             block.imageFilePath?.let { path ->
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(File(path))
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = block.textContent.ifEmpty { "Image" },
-                    contentScale = ContentScale.FillWidth,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 280.dp)
                         .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                )
+                        .clickable(onClick = onImageClick)
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(File(path))
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = block.textContent.ifEmpty { "Image (tap to enlarge)" },
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    // "Tap to enlarge" hint
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            "🔍 Tap to view",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
+                    }
+                }
             }
 
             // Caption + delete
@@ -538,8 +590,7 @@ private fun ImageBlockView(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (block.textContent.isEmpty())
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    else
-                        MaterialTheme.colorScheme.onSurface,
+                    else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
@@ -593,10 +644,6 @@ private fun SmallFab(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Utils
-// ═══════════════════════════════════════════════════════════════
 
 private fun formatDuration(durationMs: Long): String {
     val seconds = durationMs / 1000

@@ -36,8 +36,11 @@ class ModelManager @Inject constructor(
 ) {
 
     companion object {
-        private const val MODEL_URL = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
         private const val MODEL_FILENAME = "qwen3-0.6b-q4_k_m.gguf"
+        private val MODEL_URLS = listOf(
+            "https://hf-mirror.com/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+            "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
+        )
     }
 
     private val _modelState = MutableStateFlow(ModelState())
@@ -79,45 +82,64 @@ class ModelManager @Inject constructor(
 
         try {
             withContext(Dispatchers.IO) {
-                val url = URL(MODEL_URL)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.connectTimeout = 30_000
-                connection.readTimeout = 30_000
-                connection.connect()
+                var lastError: String? = null
 
-                val contentLength = connection.contentLengthLong
-                val inputStream = connection.inputStream
-                val outputStream = FileOutputStream(modelFile)
+                for (urlStr in MODEL_URLS) {
+                    try {
+                        val url = URL(urlStr)
+                        val connection = url.openConnection() as HttpURLConnection
+                        connection.connectTimeout = 15_000
+                        connection.readTimeout = 600_000   // 10 min for 400MB
+                        connection.setRequestProperty("User-Agent", "SpeakIn/1.0")
+                        connection.instanceFollowRedirects = true
+                        connection.connect()
 
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
-                var totalBytesRead = 0L
+                        if (connection.responseCode != 200) {
+                            connection.disconnect()
+                            throw RuntimeException("HTTP ${connection.responseCode}")
+                        }
 
-                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    outputStream.write(buffer, 0, bytesRead)
-                    totalBytesRead += bytesRead
+                        val contentLength = connection.contentLengthLong
+                        val inputStream = connection.inputStream
+                        val outputStream = FileOutputStream(modelFile)
 
-                    if (contentLength > 0) {
-                        val progress = totalBytesRead.toFloat() / contentLength.toFloat()
-                        _modelState.value = ModelState(
-                            status = ModelStatus.Downloading,
-                            progress = progress
-                        )
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalBytesRead = 0L
+
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytesRead += bytesRead
+
+                            if (contentLength > 0) {
+                                val progress = totalBytesRead.toFloat() / contentLength.toFloat()
+                                _modelState.value = ModelState(
+                                    status = ModelStatus.Downloading,
+                                    progress = progress
+                                )
+                            }
+                        }
+
+                        outputStream.flush()
+                        outputStream.close()
+                        inputStream.close()
+
+                        _modelState.value = ModelState(status = ModelStatus.DownloadComplete)
+                        return@withContext  // success
+                    } catch (e: Exception) {
+                        lastError = e.message
+                        // Try next URL
                     }
                 }
 
-                outputStream.flush()
-                outputStream.close()
-                inputStream.close()
-
-                _modelState.value = ModelState(status = ModelStatus.DownloadComplete)
+                throw RuntimeException(lastError ?: "All mirror URLs failed")
             }
 
             loadModel(modelFile)
         } catch (e: Exception) {
             _modelState.value = ModelState(
                 status = ModelStatus.Error,
-                error = "Download failed: ${e.message}"
+                error = e.message ?: "Download failed"
             )
         }
     }

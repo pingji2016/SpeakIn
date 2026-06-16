@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.speakin.app.ui.notedetail.NoteDetailScreen
 import com.speakin.app.ui.notelist.NoteListScreen
+import com.speakin.app.ui.settings.SettingsScreen
 
 @Composable
 fun SpeakInNavGraph(
@@ -53,6 +54,9 @@ fun SpeakInNavGraph(
             NoteListScreen(
                 onNavigateToDetail = { noteId ->
                     navController.navigate(Routes.noteDetail(noteId))
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Routes.SETTINGS)
                 }
             )
         }
@@ -64,6 +68,12 @@ fun SpeakInNavGraph(
             )
         ) {
             NoteDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
