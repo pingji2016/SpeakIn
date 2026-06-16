@@ -1,18 +1,44 @@
+# ── Claude ──────────────────────────────────────────
+.claude/
+
+# ── Gradle ──────────────────────────────────────────
+.gradle/
+gradle/
+!gradle/wrapper/
+!gradle/libs.versions.toml
+build/
+**/build/
+
+# ── IDE ─────────────────────────────────────────────
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
+*.iws
+*.ipr
+.vscode/
+
+# ── Android ─────────────────────────────────────────
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.log
+*.hprof
+local.properties
+/.navigation/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-/.idea/
-/gradle/
-/gradle/
+
+# ── OS ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Models (downloaded, not committed) ──────────────
+whisper_models/
+llm_models/
+
+# ── Signing (keep out of VCS) ───────────────────────
+*.jks
+*.keystore
+signing.properties

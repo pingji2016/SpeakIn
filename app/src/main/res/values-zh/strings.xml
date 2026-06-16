@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SpeakIn</string>
+
+    <!-- Note List -->
+    <string name="note_list_title">SpeakIn</string>
+    <string name="new_note">新建笔记</string>
+    <string name="loading">加载中…</string>
+    <string name="no_notes_title">还没有笔记</string>
+    <string name="no_notes_subtitle">点击 + 开始你的第一个语音笔记</string>
+    <string name="untitled_note">未命名笔记</string>
+    <string name="note">笔记</string>
+    <string name="segments_count">%d 段</string>
+    <string name="open">打开</string>
+
+    <!-- Note Detail -->
+    <string name="back">返回</string>
+    <string name="edit_title">编辑标题</string>
+    <string name="save">保存</string>
+    <string name="transcribing">正在转写…</string>
+    <string name="tap_to_record">点击下方按钮开始录音</string>
+    <string name="pause">暂停</string>
+    <string name="play">播放</string>
+    <string name="delete_segment">删除片段</string>
+    <string name="add_block">添加内容</string>
+    <string name="add_voice">语音</string>
+    <string name="add_text">文字</string>
+    <string name="add_image">图片</string>
+    <string name="image_caption">添加描述…</string>
+    <string name="text_placeholder">输入文字…</string>
+
+    <!-- Recording -->
+    <string name="start_recording">开始录音</string>
+    <string name="recording">录音中…</string>
+    <string name="stop">停止</string>
+
+    <!-- Model Download -->
+    <string name="model_required_title">需要 AI 模型</string>
+    <string name="model_required_desc">需要 Qwen3-0.6B（400MB）进行文字润色。\n一次下载，永久离线使用。</string>
+    <string name="download_model_button">下载模型（400MB）</string>
+    <string name="downloading">下载中…</string>
+    <string name="loading_model">加载模型中…</string>
+    <string name="initializing_engine">正在初始化 AI 引擎</string>
+    <string name="model_ready">就绪！</string>
+    <string name="error_label">错误</string>
+    <string name="unknown_error">未知错误</string>
+    <string name="retry">重试</string>
+
+    <!-- Common -->
+    <string name="delete">删除</string>
+    <string name="cancel">取消</string>
+    <string name="delete_note_title">删除笔记</string>
+    <string name="delete_note_message">确定要删除这条笔记吗？此操作不可撤销。</string>
+    <string name="delete_block_title">删除内容块</string>
+    <string name="delete_block_message">确定要删除此内容块吗？</string>
+</resources>
