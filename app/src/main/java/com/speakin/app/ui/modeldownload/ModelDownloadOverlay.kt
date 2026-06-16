@@ -32,8 +32,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.speakin.app.R
 import com.speakin.app.domain.llm.ModelStatus
 
 @Composable
@@ -80,12 +82,12 @@ fun ModelDownloadOverlay(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "AI Model Required",
+                            stringResource(R.string.model_required_title),
                             style = MaterialTheme.typography.titleLarge
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Qwen3-0.6B (400MB) is needed for text polishing.\nDownload once, use offline forever.",
+                            stringResource(R.string.model_required_desc),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -96,7 +98,7 @@ fun ModelDownloadOverlay(
                         ) {
                             Icon(Icons.Default.CloudDownload, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Download Model (400MB)")
+                            Text(stringResource(R.string.download_model_button))
                         }
                     }
 
@@ -109,7 +111,7 @@ fun ModelDownloadOverlay(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Downloading...",
+                            stringResource(R.string.downloading),
                             style = MaterialTheme.typography.titleLarge
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -130,12 +132,12 @@ fun ModelDownloadOverlay(
 
                     ModelStatus.Loading -> {
                         Text(
-                            "Loading Model...",
+                            stringResource(R.string.loading_model),
                             style = MaterialTheme.typography.titleLarge
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Initializing AI engine",
+                            stringResource(R.string.initializing_engine),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -150,7 +152,7 @@ fun ModelDownloadOverlay(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Ready!",
+                            stringResource(R.string.model_ready),
                             style = MaterialTheme.typography.titleLarge
                         )
                     }
@@ -164,13 +166,13 @@ fun ModelDownloadOverlay(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Error",
+                            stringResource(R.string.error_label),
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            state.error ?: "Unknown error",
+                            state.error ?: stringResource(R.string.unknown_error),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -181,7 +183,7 @@ fun ModelDownloadOverlay(
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Retry")
+                            Text(stringResource(R.string.retry))
                         }
                     }
 

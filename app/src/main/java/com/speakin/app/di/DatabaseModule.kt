@@ -2,8 +2,8 @@ package com.speakin.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.speakin.app.data.local.dao.ContentBlockDao
 import com.speakin.app.data.local.dao.NoteDao
-import com.speakin.app.data.local.dao.SegmentDao
 import com.speakin.app.data.local.database.SpeakInDatabase
 import dagger.Module
 import dagger.Provides
@@ -23,12 +23,15 @@ object DatabaseModule {
             context,
             SpeakInDatabase::class.java,
             "speakin_database"
-        ).build()
+        )
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides
     fun provideNoteDao(database: SpeakInDatabase): NoteDao = database.noteDao()
 
     @Provides
-    fun provideSegmentDao(database: SpeakInDatabase): SegmentDao = database.segmentDao()
+    fun provideContentBlockDao(database: SpeakInDatabase): ContentBlockDao =
+        database.contentBlockDao()
 }

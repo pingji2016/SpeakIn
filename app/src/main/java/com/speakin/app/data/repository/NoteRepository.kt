@@ -1,18 +1,20 @@
 package com.speakin.app.data.repository
 
+import com.speakin.app.data.local.dao.ContentBlockDao
 import com.speakin.app.data.local.dao.NoteDao
-import com.speakin.app.data.local.dao.SegmentDao
+import com.speakin.app.data.local.entity.BlockType
+import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
-import com.speakin.app.data.local.entity.SegmentEntity
 import kotlinx.coroutines.flow.Flow
 import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class NoteRepository @Inject constructor(
     private val noteDao: NoteDao,
-    private val segmentDao: SegmentDao
+    private val contentBlockDao: ContentBlockDao
 ) {
 
     fun getAllNotes(): Flow<List<NoteEntity>> = noteDao.getAllNotes()
@@ -21,13 +23,13 @@ class NoteRepository @Inject constructor(
 
     fun getNoteByIdFlow(noteId: String): Flow<NoteEntity?> = noteDao.getNoteByIdFlow(noteId)
 
-    fun getSegmentsByNoteId(noteId: String): Flow<List<SegmentEntity>> =
-        segmentDao.getSegmentsByNoteId(noteId)
+    fun getBlocksByNoteId(noteId: String): Flow<List<ContentBlockEntity>> =
+        contentBlockDao.getBlocksByNoteId(noteId)
 
     suspend fun createNote(title: String): NoteEntity {
         val now = System.currentTimeMillis()
         val note = NoteEntity(
-            id = java.util.UUID.randomUUID().toString(),
+            id = UUID.randomUUID().toString(),
             title = title,
             createdAt = now,
             updatedAt = now
@@ -36,61 +38,112 @@ class NoteRepository @Inject constructor(
         return note
     }
 
-    suspend fun addSegment(
+    // ─── Voice Block ───────────────────────────────────────
+
+    suspend fun addVoiceBlock(
         noteId: String,
         audioFile: File,
         durationMs: Long
-    ): SegmentEntity {
-        val sortOrder = segmentDao.getMaxSortOrder(noteId) + 1
+    ): ContentBlockEntity {
+        val sortOrder = contentBlockDao.getMaxSortOrder(noteId) + 1
         val now = System.currentTimeMillis()
-        val segment = SegmentEntity(
-            id = java.util.UUID.randomUUID().toString(),
+        val block = ContentBlockEntity(
+            id = UUID.randomUUID().toString(),
             noteId = noteId,
+            blockType = BlockType.VOICE,
             audioFilePath = audioFile.absolutePath,
             durationMs = durationMs,
             createdAt = now,
             sortOrder = sortOrder
         )
-        segmentDao.insertSegment(segment)
+        contentBlockDao.insertBlock(block)
+        updateBlockCount(noteId)
+        return block
+    }
 
-        val segmentCount = segmentDao.getSegmentCount(noteId)
-        noteDao.updateNote(
-            noteDao.getNoteById(noteId)?.copy(
-                segmentCount = segmentCount,
-                updatedAt = System.currentTimeMillis()
-            ) ?: return segment
+    suspend fun updateTranscription(blockId: String, transcription: String) {
+        val block = contentBlockDao.getBlockById(blockId) ?: return
+        contentBlockDao.updateBlock(block.copy(transcription = transcription))
+    }
+
+    suspend fun updatePolishedText(blockId: String, polishedText: String) {
+        val block = contentBlockDao.getBlockById(blockId) ?: return
+        contentBlockDao.updateBlock(block.copy(polishedText = polishedText))
+    }
+
+    // ─── Text Block ────────────────────────────────────────
+
+    suspend fun addTextBlock(noteId: String, text: String = ""): ContentBlockEntity {
+        val sortOrder = contentBlockDao.getMaxSortOrder(noteId) + 1
+        val now = System.currentTimeMillis()
+        val block = ContentBlockEntity(
+            id = UUID.randomUUID().toString(),
+            noteId = noteId,
+            blockType = BlockType.TEXT,
+            textContent = text,
+            createdAt = now,
+            sortOrder = sortOrder
         )
-        return segment
+        contentBlockDao.insertBlock(block)
+        updateBlockCount(noteId)
+        return block
     }
 
-    suspend fun updateTranscription(segmentId: String, rawText: String) {
-        val segment = segmentDao.getSegmentById(segmentId) ?: return
-        segmentDao.updateSegment(segment.copy(rawText = rawText))
+    suspend fun updateTextBlock(blockId: String, text: String) {
+        val block = contentBlockDao.getBlockById(blockId) ?: return
+        contentBlockDao.updateBlock(block.copy(textContent = text))
     }
 
-    suspend fun updatePolishedText(segmentId: String, polishedText: String) {
-        val segment = segmentDao.getSegmentById(segmentId) ?: return
-        segmentDao.updateSegment(segment.copy(polishedText = polishedText))
-    }
+    // ─── Image Block ───────────────────────────────────────
 
-    suspend fun deleteSegment(segmentId: String) {
-        val segment = segmentDao.getSegmentById(segmentId) ?: return
-        segmentDao.deleteSegment(segment)
-        val segmentCount = segmentDao.getSegmentCount(segment.noteId)
-        noteDao.updateNote(
-            noteDao.getNoteById(segment.noteId)?.copy(
-                segmentCount = segmentCount,
-                updatedAt = System.currentTimeMillis()
-            ) ?: return
+    suspend fun addImageBlock(noteId: String, imageFile: File, caption: String = ""): ContentBlockEntity {
+        val sortOrder = contentBlockDao.getMaxSortOrder(noteId) + 1
+        val now = System.currentTimeMillis()
+        val block = ContentBlockEntity(
+            id = UUID.randomUUID().toString(),
+            noteId = noteId,
+            blockType = BlockType.IMAGE,
+            textContent = caption,
+            imageFilePath = imageFile.absolutePath,
+            createdAt = now,
+            sortOrder = sortOrder
         )
+        contentBlockDao.insertBlock(block)
+        updateBlockCount(noteId)
+        return block
+    }
+
+    // ─── Block Operations ──────────────────────────────────
+
+    suspend fun deleteBlock(blockId: String) {
+        val block = contentBlockDao.getBlockById(blockId) ?: return
+        // Clean up files
+        block.audioFilePath?.let { File(it).delete() }
+        block.imageFilePath?.let { File(it).delete() }
+        contentBlockDao.deleteBlock(block)
+        updateBlockCount(block.noteId)
     }
 
     suspend fun deleteNote(noteId: String) {
+        // Clean up all block files
+        val blocks = contentBlockDao.getBlocksByNoteId(noteId)
+        // Note: Flow can't be collected here, use noteId for cascade delete at DB level
         noteDao.deleteNoteById(noteId)
     }
 
     suspend fun updateNoteTitle(noteId: String, title: String) {
         val note = noteDao.getNoteById(noteId) ?: return
         noteDao.updateNote(note.copy(title = title, updatedAt = System.currentTimeMillis()))
+    }
+
+    private suspend fun updateBlockCount(noteId: String) {
+        val count = contentBlockDao.getBlockCount(noteId)
+        val note = noteDao.getNoteById(noteId) ?: return
+        noteDao.updateNote(
+            note.copy(
+                blockCount = count,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
     }
 }

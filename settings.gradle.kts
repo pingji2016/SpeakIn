@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "SpeakIn"
 include(":app")
+include(":model-service")
+include(":speakin_assets")

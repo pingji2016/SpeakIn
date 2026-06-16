@@ -3,8 +3,9 @@ package com.speakin.app.ui.notedetail
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.speakin.app.data.local.entity.BlockType
+import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
-import com.speakin.app.data.local.entity.SegmentEntity
 import com.speakin.app.data.repository.NoteRepository
 import com.speakin.app.domain.asr.AsrEngine
 import com.speakin.app.domain.audio.AudioPlayer
@@ -25,11 +26,10 @@ import javax.inject.Inject
 
 data class NoteDetailUiState(
     val note: NoteEntity? = null,
-    val segments: List<SegmentEntity> = emptyList(),
+    val blocks: List<ContentBlockEntity> = emptyList(),
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
-    val isPlaying: Boolean = false,
-    val playingSegmentId: String? = null,
+    val playingBlockId: String? = null,
     val isLoading: Boolean = true
 )
 
@@ -42,6 +42,7 @@ class NoteDetailViewModel @Inject constructor(
     private val asrEngine: AsrEngine,
     private val polishEngine: PolishEngine,
     private val audioOutputDir: File,
+    private val imageOutputDir: File,
     private val modelManager: ModelManager
 ) : ViewModel() {
 
@@ -64,8 +65,8 @@ class NoteDetailViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            repository.getSegmentsByNoteId(noteId).collect { segments ->
-                _uiState.value = _uiState.value.copy(segments = segments)
+            repository.getBlocksByNoteId(noteId).collect { blocks ->
+                _uiState.value = _uiState.value.copy(blocks = blocks)
             }
         }
     }
@@ -75,6 +76,8 @@ class NoteDetailViewModel @Inject constructor(
             modelManager.checkAndPrepare()
         }
     }
+
+    // ─── Voice Recording ───────────────────────────────────
 
     fun startRecording() {
         val fileName = "rec_${UUID.randomUUID().toString()}.m4a"
@@ -97,7 +100,7 @@ class NoteDetailViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(isRecording = false, isTranscribing = true)
 
         viewModelScope.launch {
-            val segment = repository.addSegment(noteId, file, durationMs)
+            val block = repository.addVoiceBlock(noteId, file, durationMs)
 
             withContext(Dispatchers.IO) {
                 val transcribeSignal = kotlinx.coroutines.CompletableDeferred<String>()
@@ -112,55 +115,86 @@ class NoteDetailViewModel @Inject constructor(
                 })
                 val rawText = transcribeSignal.await()
 
-                repository.updateTranscription(segment.id, rawText)
+                repository.updateTranscription(block.id, rawText)
 
-                val polishSignal = kotlinx.coroutines.CompletableDeferred<String>()
-                polishEngine.polish(rawText, object : PolishEngine.Callback {
-                    override fun onResult(text: String) {
-                        polishSignal.complete(text)
-                    }
-                    override fun onError(error: String) {
-                        polishSignal.complete(rawText)
-                    }
-                })
-                val polishedText = polishSignal.await()
-                repository.updatePolishedText(segment.id, polishedText)
+                if (rawText.isNotBlank()) {
+                    val polishSignal = kotlinx.coroutines.CompletableDeferred<String>()
+                    polishEngine.polish(rawText, object : PolishEngine.Callback {
+                        override fun onResult(text: String) {
+                            polishSignal.complete(text)
+                        }
+                        override fun onError(error: String) {
+                            polishSignal.complete(rawText)
+                        }
+                    })
+                    val polishedText = polishSignal.await()
+                    repository.updatePolishedText(block.id, polishedText)
+                }
             }
 
             _uiState.value = _uiState.value.copy(isTranscribing = false)
         }
     }
 
-    fun onPlaybackStarted(segmentId: String) {
-        val segment = _uiState.value.segments.find { it.id == segmentId } ?: return
-        val file = File(segment.audioFilePath)
+    fun onPlaybackStarted(blockId: String) {
+        val block = _uiState.value.blocks.find { it.id == blockId } ?: return
+        val path = block.audioFilePath ?: return
+        val file = File(path)
         if (!file.exists()) return
 
-        _uiState.value = _uiState.value.copy(playingSegmentId = segmentId, isPlaying = true)
+        _uiState.value = _uiState.value.copy(playingBlockId = blockId)
 
         audioPlayer.play(file, object : AudioPlayer.PlaybackListener {
             override fun onCompletion() {
-                _uiState.value = _uiState.value.copy(playingSegmentId = null, isPlaying = false)
+                _uiState.value = _uiState.value.copy(playingBlockId = null)
             }
-
             override fun onError(error: String) {
-                _uiState.value = _uiState.value.copy(playingSegmentId = null, isPlaying = false)
+                _uiState.value = _uiState.value.copy(playingBlockId = null)
             }
         })
     }
 
-    fun onPlaybackCompleted() {
+    fun onPlaybackStopped() {
         audioPlayer.stop()
-        _uiState.value = _uiState.value.copy(playingSegmentId = null, isPlaying = false)
+        _uiState.value = _uiState.value.copy(playingBlockId = null)
     }
 
-    fun deleteSegment(segmentId: String) {
+    // ─── Text Block ────────────────────────────────────────
+
+    fun addTextBlock() {
         viewModelScope.launch {
-            if (segmentId == _uiState.value.playingSegmentId) {
+            repository.addTextBlock(noteId)
+        }
+    }
+
+    fun updateTextBlock(blockId: String, text: String) {
+        viewModelScope.launch {
+            repository.updateTextBlock(blockId, text)
+        }
+    }
+
+    // ─── Image Block ───────────────────────────────────────
+
+    fun addImageBlock(imageFile: File) {
+        viewModelScope.launch {
+            // Copy image to app storage
+            val destDir = imageOutputDir
+            destDir.mkdirs()
+            val destFile = File(destDir, "img_${UUID.randomUUID()}.jpg")
+            imageFile.copyTo(destFile, overwrite = true)
+            repository.addImageBlock(noteId, destFile)
+        }
+    }
+
+    // ─── Block Operations ──────────────────────────────────
+
+    fun deleteBlock(blockId: String) {
+        viewModelScope.launch {
+            if (blockId == _uiState.value.playingBlockId) {
                 audioPlayer.stop()
-                _uiState.value = _uiState.value.copy(playingSegmentId = null, isPlaying = false)
+                _uiState.value = _uiState.value.copy(playingBlockId = null)
             }
-            repository.deleteSegment(segmentId)
+            repository.deleteBlock(blockId)
         }
     }
 

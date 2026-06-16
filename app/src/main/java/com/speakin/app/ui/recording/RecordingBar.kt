@@ -34,7 +34,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.speakin.app.R
 import com.speakin.app.ui.theme.SpeakInRecording
 
 @Composable
@@ -89,7 +91,7 @@ fun RecordingBar(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "开始录音",
+                        stringResource(R.string.start_recording),
                         style = MaterialTheme.typography.labelLarge
                     )
                 }
@@ -107,7 +109,7 @@ fun RecordingBar(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        "录音中...",
+                        stringResource(R.string.recording),
                         style = MaterialTheme.typography.titleMedium,
                         color = SpeakInRecording
                     )
@@ -122,11 +124,11 @@ fun RecordingBar(
                     ) {
                         Icon(
                             Icons.Default.Stop,
-                            contentDescription = "停止",
+                            contentDescription = stringResource(R.string.stop),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("停止")
+                        Text(stringResource(R.string.stop))
                     }
                 }
             }

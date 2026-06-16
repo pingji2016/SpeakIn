@@ -15,8 +15,9 @@ import javax.inject.Singleton
 /**
  * ASR 模型管理器。
  *
- * 管理 whisper .pte 模型的下载与文件定位。
- * 模型文件可通过导出脚本在 PC 上生成，然后通过 ADB 推送，或在 App 内下载。
+ * 管理 whisper .pte 模型的获取与文件定位。
+ * 模型通过 Play Asset Delivery 的 install-time 资产包提供，
+ * 首次启动时从 assets 复制到内部存储。
  */
 @Singleton
 class AsrModelManager @Inject constructor(
@@ -60,7 +61,58 @@ class AsrModelManager @Inject constructor(
     }
 
     /**
-     * 下载所有模型文件。
+     * 从 asset pack assets 复制模型文件到内部存储。
+     * 首次启动时调用，如果内部存储已有则跳过。
+     */
+    suspend fun prepareFromAssets(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val dir = getModelDir()
+            dir.mkdirs()
+
+            val files = listOf(MODEL_PTE, MODEL_TOKENIZER)
+            for (filename in files) {
+                val dest = File(dir, filename)
+                if (dest.exists() && dest.length() > 1000) {
+                    Log.i(TAG, "Model file already exists: $filename")
+                    continue
+                }
+
+                // Try asset pack path first, then direct assets as fallback
+                val assetPaths = listOf(
+                    "speakin_assets/$filename",  // Asset pack path
+                    filename                       // Direct assets fallback
+                )
+
+                var copied = false
+                for (assetPath in assetPaths) {
+                    try {
+                        context.assets.open(assetPath).use { input ->
+                            FileOutputStream(dest).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        Log.i(TAG, "Copied from assets: $assetPath → $filename")
+                        copied = true
+                        break
+                    } catch (_: Exception) {
+                        // Try next path
+                    }
+                }
+
+                if (!copied) {
+                    Log.w(TAG, "Model file not found in assets: $filename")
+                }
+            }
+
+            isModelReady()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to prepare from assets", e)
+            false
+        }
+    }
+
+    /**
+     * 下载所有模型文件（备用方案：当 asset pack 不可用时）。
      */
     suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
         val dir = getModelDir()

@@ -29,7 +29,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -54,9 +55,14 @@ android {
         }
     }
     ndkVersion = "27.0.12077973"
+
+    // Play Asset Delivery
+    assetPacks += listOf(":speakin_assets")
 }
 
 dependencies {
+    implementation(project(":model-service"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -89,6 +95,9 @@ dependencies {
 
     // ExoPlayer
     implementation(libs.exoplayer.core)
+
+    // Coil (image loading)
+    implementation(libs.coil.compose)
 
     // ExecuTorch
     implementation(libs.executorch.core)
@@ -229,4 +238,27 @@ tasks.register("downloadAllModels") {
     group = "SpeakIn"
     description = "下载全部模型（whisper ASR + Qwen3 润色）"
     dependsOn("downloadWhisperModel", "downloadLlmModel")
+}
+
+// 将 whisper 模型文件复制到 asset pack 中（用于 AAB 构建）
+tasks.register<Copy>("copyModelsToAssetPack") {
+    group = "SpeakIn"
+    description = "复制 whisper 模型到 speakin_assets asset pack"
+
+    val srcDir = rootProject.layout.projectDirectory.dir("whisper_models").asFile
+    val dstDir = rootProject.layout.projectDirectory.dir("speakin_assets/src/main/assets").asFile
+
+    from(srcDir) {
+        include("whisper_tiny_xnnpack_fp32.pte", "tokenizer.json")
+    }
+    into(dstDir)
+
+    doFirst {
+        dstDir.mkdirs()
+        println("Copying model files to asset pack: ${dstDir.absolutePath}")
+    }
+
+    doLast {
+        println("Model files copied to asset pack successfully.")
+    }
 }

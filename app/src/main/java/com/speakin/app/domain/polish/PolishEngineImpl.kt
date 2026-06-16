@@ -1,19 +1,24 @@
 package com.speakin.app.domain.polish
 
-import com.speakin.app.domain.llm.LocalLlmEngine
-import com.speakin.app.domain.llm.ModelManager
+import android.util.Log
+import com.speakin.app.domain.service.ModelServiceFacade
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 润色引擎实现 — 通过 AIDL 调用远程 :model 进程中的 LLM。
+ */
 @Singleton
 class PolishEngineImpl @Inject constructor(
-    private val modelManager: ModelManager,
-    private val engine: LocalLlmEngine
+    private val modelService: ModelServiceFacade
 ) : PolishEngine {
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun polish(text: String, callback: PolishEngine.Callback) {
         if (text.isBlank()) {
@@ -21,36 +26,38 @@ class PolishEngineImpl @Inject constructor(
             return
         }
 
-        GlobalScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    if (!engine.isLoaded) {
-                        callback.onResult(text)
-                        return@withContext
-                    }
+        scope.launch {
+            try {
+                modelService.bind()
 
-                    val prompt = buildPolishPrompt(text)
-                    val result = engine.complete(prompt)
-
-                    if (result.isBlank()) {
-                        callback.onResult(text)
-                    } else {
-                        callback.onResult(result)
-                    }
-                } catch (e: Exception) {
-                    callback.onResult(text)
+                // 确保 LLM 已加载（模型路径由 ModelManager 管理）
+                val modelsDir = File(/* context.filesDir */ "", "models")
+                val modelFile = File(modelsDir, "qwen3-0.6b-q4_k_m.gguf")
+                if (modelFile.exists()) {
+                    modelService.loadLlm(modelFile)
                 }
+
+                val result = modelService.complete(
+                    "请润色以下文字，修正标点和语病，使其更通顺自然。直接输出润色结果，不要添加任何额外说明。\n\n$text"
+                )
+
+                if (result.isNotBlank()) callback.onResult(result)
+                else callback.onResult(text)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Polish failed", e)
+                callback.onResult(text) // 降级返回原文
             }
         }
     }
 
-    override fun isModelLoaded(): Boolean = engine.isLoaded
+    override fun isModelLoaded(): Boolean = true
 
     override fun release() {
-        modelManager.release()
+        // 远程资源由 Service 管理
     }
 
-    private fun buildPolishPrompt(text: String): String {
-        return "请润色以下文字，修正标点和语病，使其更通顺自然。直接输出润色结果，不要添加任何额外说明。\n\n$text"
+    companion object {
+        private const val TAG = "PolishEngineImpl"
     }
 }

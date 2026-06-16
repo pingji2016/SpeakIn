@@ -1,6 +1,8 @@
 package com.speakin.app.ui.notelist
 
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,9 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.speakin.app.R
 import com.speakin.app.data.local.entity.NoteEntity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,7 +76,7 @@ fun NoteListScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "SpeakIn",
+                        stringResource(R.string.note_list_title),
                         style = MaterialTheme.typography.titleLarge
                     )
                 },
@@ -91,7 +95,7 @@ fun NoteListScreen(
             ) {
                 Icon(
                     Icons.Default.Add,
-                    contentDescription = "新建笔记",
+                    contentDescription = stringResource(R.string.new_note),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -104,7 +108,7 @@ fun NoteListScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("加载中...")
+                Text(stringResource(R.string.loading))
             }
         } else if (uiState.notes.isEmpty()) {
             Box(
@@ -133,13 +137,13 @@ fun NoteListScreen(
                     }
                     Spacer(modifier = Modifier.height(20.dp))
                     Text(
-                        "还没有笔记",
+                        stringResource(R.string.no_notes_title),
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "点击 + 开始你的第一个语音笔记",
+                        stringResource(R.string.no_notes_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -158,7 +162,11 @@ fun NoteListScreen(
                     NoteCard(
                         note = note,
                         onClick = { onNavigateToDetail(note.id) },
-                        onLongClick = { showDeleteConfirm = note.id }
+                        onLongClick = { showDeleteConfirm = note.id },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(400),
+                            fadeOutSpec = tween(300)
+                        )
                     )
                 }
                 item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -168,19 +176,19 @@ fun NoteListScreen(
         if (showDeleteConfirm != null) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirm = null },
-                title = { Text("删除笔记") },
-                text = { Text("确定要删除这条笔记吗？此操作不可撤销。") },
+                title = { Text(stringResource(R.string.delete_note_title)) },
+                text = { Text(stringResource(R.string.delete_note_message)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showDeleteConfirm?.let { viewModel.deleteNote(it) }
                         showDeleteConfirm = null
                     }) {
-                        Text("删除", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirm = null }) {
-                        Text("取消")
+                        Text(stringResource(R.string.cancel))
                     }
                 }
             )
@@ -188,18 +196,24 @@ fun NoteListScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
     note: NoteEntity,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
@@ -236,7 +250,7 @@ private fun NoteCard(
             // 中间内容
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = note.title.ifEmpty { "未命名笔记" },
+                    text = note.title.ifEmpty { stringResource(R.string.untitled_note) },
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -254,7 +268,7 @@ private fun NoteCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${note.segmentCount} 段",
+                        text = stringResource(R.string.segments_count, note.blockCount),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -264,7 +278,7 @@ private fun NoteCard(
             // 右侧箭头
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "打开",
+                contentDescription = stringResource(R.string.open),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier.size(20.dp)
             )

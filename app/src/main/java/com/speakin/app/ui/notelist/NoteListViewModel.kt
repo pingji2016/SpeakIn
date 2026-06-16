@@ -47,7 +47,7 @@ class NoteListViewModel @Inject constructor(
 
     fun createNote() {
         viewModelScope.launch {
-            val note = repository.createNote("New Note")
+            val note = repository.createNote("Untitled Note")
             _events.emit(NoteListEvent.NavigateToDetail(note.id))
         }
     }
