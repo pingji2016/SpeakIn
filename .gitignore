@@ -3,9 +3,6 @@
 
 # ── Gradle ──────────────────────────────────────────
 .gradle/
-gradle/
-!gradle/wrapper/
-!gradle/libs.versions.toml
 build/
 **/build/
 
