@@ -9,6 +9,18 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// ── 签名配置 ──
+// 本地：读取 signing.properties；CI：从环境变量获取
+val signingProps: Map<String, String> = rootProject.file("signing.properties").let { f ->
+    if (f.exists()) {
+        f.readLines().mapNotNull { line ->
+            val i = line.indexOf('=')
+            if (i > 0) line.substring(0, i).trim() to line.substring(i + 1).trim()
+            else null
+        }.toMap()
+    } else emptyMap()
+}
+
 android {
     namespace = "com.speakin.app"
     compileSdk = 36
@@ -28,20 +40,15 @@ android {
     }
 
     signingConfigs {
-        // CI / 自动构建用 — 优先从 signing.properties 读取，否则用环境变量
         create("release") {
-            val signingFile = rootProject.file("signing.properties")
-            val props = mutableMapOf<String, String>()
-            if (signingFile.exists()) {
-                signingFile.forEachLine { line ->
-                    val parts = line.split("=", limit = 2)
-                    if (parts.size == 2) props[parts[0].trim()] = parts[1].trim()
-                }
-            }
-            storeFile = file(props["storeFile"] ?: System.getenv("KEYSTORE_PATH") ?: "release.keystore")
-            storePassword = props["storePassword"] ?: System.getenv("KEYSTORE_PASSWORD") ?: "android"
-            keyAlias = props["keyAlias"] ?: System.getenv("KEY_ALIAS") ?: "ci-release"
-            keyPassword = props["keyPassword"] ?: System.getenv("KEY_PASSWORD") ?: "android"
+            storeFile = file(signingProps["storeFile"]
+                ?: System.getenv("KEYSTORE_PATH") ?: "release.keystore")
+            storePassword = signingProps["storePassword"]
+                ?: System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias = signingProps["keyAlias"]
+                ?: System.getenv("KEY_ALIAS") ?: "ci-release"
+            keyPassword = signingProps["keyPassword"]
+                ?: System.getenv("KEY_PASSWORD") ?: "android"
         }
     }
 

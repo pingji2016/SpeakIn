@@ -100,7 +100,6 @@ jobs:
             echo "KEYSTORE_PASSWORD=android"       >> $GITHUB_ENV
             echo "KEY_ALIAS=ci-release"              >> $GITHUB_ENV
             echo "KEY_PASSWORD=android"              >> $GITHUB_ENV
-            echo "KEYSTORE_PATH=app/release.keystore" >> $GITHUB_ENV
           fi
 
       # ─── 构建 Release APK ─────────────────────────────
