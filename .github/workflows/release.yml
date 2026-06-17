@@ -105,23 +105,10 @@ jobs:
 
       # ─── 回写版本号到源码 ─────────────────────────────
       - name: Update version in build.gradle.kts
-        env:
-          VC: ${{ steps.version.outputs.version_code }}
-          VN: ${{ steps.version.outputs.new_version }}
         run: |
-          python3 << 'PYEOF'
-import re, os
-path = 'app/build.gradle.kts'
-vc = os.environ['VC']
-vn = os.environ['VN']
-with open(path, 'r') as f:
-    content = f.read()
-content = re.sub(r'versionCode\s*=\s*.*', f'versionCode = {vc}', content)
-content = re.sub(r'versionName\s*=\s*.*', f'versionName = "{vn}"', content)
-with open(path, 'w') as f:
-    f.write(content)
-print('Updated version in build.gradle.kts')
-PYEOF
+          sed -i "s/versionCode = .*/versionCode = ${{ steps.version.outputs.version_code }}/" app/build.gradle.kts
+          sed -i "s/versionName = .*/versionName = \"${{ steps.version.outputs.new_version }}\"/" app/build.gradle.kts
+          echo "Updated version in build.gradle.kts:"
           grep -E "versionCode|versionName" app/build.gradle.kts
 
       # ─── 提交版本号 & 打 Tag ──────────────────────────
