@@ -67,16 +67,7 @@ jobs:
 
           echo "→ New version: $NEW_VERSION (code=$VERSION_CODE, tag=$NEW_TAG)"
 
-      # ─── 写入新版本号 ─────────────────────────────────
-      - name: Update version in build.gradle.kts
-        run: |
-          sed -i "s/versionCode = .*/versionCode = ${{ steps.version.outputs.version_code }}/" app/build.gradle.kts
-          sed -i "s/versionName = \".*\"/versionName = \"${{ steps.version.outputs.new_version }}\"/" app/build.gradle.kts
-          echo "Updated app/build.gradle.kts:"
-          grep -E "versionCode|versionName" app/build.gradle.kts
-
       # ─── 准备签名密钥 ─────────────────────────────────
-      # 优先使用 GitHub Secrets 里的正式密钥，否则生成临时 CI 密钥
       - name: Prepare signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -85,10 +76,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "🔑 Using release keystore from secrets"
+            echo "Using release keystore from secrets"
             echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
           else
-            echo "⚠️  No keystore secret found — generating debug keystore for CI"
+            echo "No keystore secret found, generating CI debug keystore"
             keytool -genkey -v \
               -keystore app/release.keystore \
               -alias ci-release \
@@ -97,9 +88,9 @@ jobs:
               -keypass android \
               -dname "CN=CI, OU=SpeakIn, O=SpeakIn, L=Unknown, ST=Unknown, C=US" \
               -noprompt
-            echo "KEYSTORE_PASSWORD=android"       >> $GITHUB_ENV
-            echo "KEY_ALIAS=ci-release"              >> $GITHUB_ENV
-            echo "KEY_PASSWORD=android"              >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=android"  >> $GITHUB_ENV
+            echo "KEY_ALIAS=ci-release"        >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android"        >> $GITHUB_ENV
           fi
 
       # ─── 构建 Release APK ─────────────────────────────
@@ -107,7 +98,34 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease --stacktrace
+        run: |
+          ./gradlew :app:assembleRelease --stacktrace \
+            -PreleaseVersionCode=${{ steps.version.outputs.version_code }} \
+            -PreleaseVersionName=${{ steps.version.outputs.new_version }}
+
+      # ─── 回写版本号到源码 ─────────────────────────────
+      - name: Update version in build.gradle.kts
+        run: |
+          python3 -c "
+import re
+path = 'app/build.gradle.kts'
+with open(path, 'r') as f:
+    content = f.read()
+content = re.sub(
+    r'versionCode\s*=\s*.*',
+    'versionCode = ${{ steps.version.outputs.version_code }}',
+    content
+)
+content = re.sub(
+    r'versionName\s*=\s*.*',
+    'versionName = \"${{ steps.version.outputs.new_version }}\"',
+    content
+)
+with open(path, 'w') as f:
+    f.write(content)
+print('Updated version in build.gradle.kts')
+"
+          grep -E "versionCode|versionName" app/build.gradle.kts
 
       # ─── 提交版本号 & 打 Tag ──────────────────────────
       - name: Commit version bump & tag
