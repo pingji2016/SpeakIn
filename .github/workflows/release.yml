@@ -8,6 +8,9 @@ on:
       # 避免 CI 自动提交再次触发
       - 'CHANGELOG.md'
 
+permissions:
+  contents: write  # 允许 git push 和创建 Release
+
 jobs:
   release:
     # 跳过 bot 的版本号提交，避免无限循环
