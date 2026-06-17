@@ -32,9 +32,10 @@ jobs:
         with:
           packages: 'platforms;android-36 build-tools;36.0.0 ndk;27.0.12077973 cmake;3.22.1'
 
-      # 覆盖 Windows 路径（gradle.properties 里写了 C:\\Program Files\\...）
+      # 覆盖 Windows 硬编码的 Java 路径
       - name: Override Java home for CI
         run: |
+          sed -i '/^org\.gradle\.java\.home=/d' gradle.properties
           echo "org.gradle.java.home=$JAVA_HOME" >> gradle.properties
 
       # ─── 版本号计算 ───────────────────────────────────
