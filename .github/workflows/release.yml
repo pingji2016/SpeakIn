@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      # 避免 CI 自动提交再次触发
+      - 'CHANGELOG.md'
+
+jobs:
+  release:
+    # 跳过 bot 的版本号提交，避免无限循环
+    if: "!contains(github.event.head_commit.message, '[ci skip]')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 完整 git 历史，用于计算版本
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 ndk;27.0.12077973 cmake;3.22.1'
+
+      # 覆盖 Windows 路径（gradle.properties 里写了 C:\\Program Files\\...）
+      - name: Override Java home for CI
+        run: |
+          echo "org.gradle.java.home=$JAVA_HOME" >> gradle.properties
+
+      # ─── 版本号计算 ───────────────────────────────────
+      - name: Calculate next version
+        id: version
+        run: |
+          # 获取最新 tag，如果没有则从 v1.0.0 开始
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # 解析语义版本号
+          CLEAN="${LATEST_TAG#v}"
+          MAJOR=$(echo "$CLEAN" | cut -d. -f1)
+          MINOR=$(echo "$CLEAN" | cut -d. -f2)
+          PATCH=$(echo "$CLEAN" | cut -d. -f3)
+
+          # 次版本号 +1
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          NEW_TAG="v${NEW_VERSION}"
+
+          # versionCode = 当前 tag 数量 + 1（单调递增整数）
+          TAG_COUNT=$(git tag | grep -c . || echo 0)
+          VERSION_CODE=$((TAG_COUNT + 1))
+
+          echo "new_version=$NEW_VERSION"     >> $GITHUB_OUTPUT
+          echo "new_tag=$NEW_TAG"              >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE"    >> $GITHUB_OUTPUT
+
+          echo "→ New version: $NEW_VERSION (code=$VERSION_CODE, tag=$NEW_TAG)"
+
+      # ─── 写入新版本号 ─────────────────────────────────
+      - name: Update version in build.gradle.kts
+        run: |
+          sed -i "s/versionCode = .*/versionCode = ${{ steps.version.outputs.version_code }}/" app/build.gradle.kts
+          sed -i "s/versionName = \".*\"/versionName = \"${{ steps.version.outputs.new_version }}\"/" app/build.gradle.kts
+          echo "Updated app/build.gradle.kts:"
+          grep -E "versionCode|versionName" app/build.gradle.kts
+
+      # ─── 准备签名密钥 ─────────────────────────────────
+      # 优先使用 GitHub Secrets 里的正式密钥，否则生成临时 CI 密钥
+      - name: Prepare signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "🔑 Using release keystore from secrets"
+            echo "$KEYSTORE_BASE64" | base64 -d > app/release.keystore
+          else
+            echo "⚠️  No keystore secret found — generating debug keystore for CI"
+            keytool -genkey -v \
+              -keystore app/release.keystore \
+              -alias ci-release \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=CI, OU=SpeakIn, O=SpeakIn, L=Unknown, ST=Unknown, C=US" \
+              -noprompt
+            echo "KEYSTORE_PASSWORD=android"       >> $GITHUB_ENV
+            echo "KEY_ALIAS=ci-release"              >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android"              >> $GITHUB_ENV
+            echo "KEYSTORE_PATH=app/release.keystore" >> $GITHUB_ENV
+          fi
+
+      # ─── 构建 Release APK ─────────────────────────────
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      # ─── 提交版本号 & 打 Tag ──────────────────────────
+      - name: Commit version bump & tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle.kts
+          git commit -m "chore: bump version to ${{ steps.version.outputs.new_version }} [ci skip]"
+          git tag "${{ steps.version.outputs.new_tag }}"
+          git push origin main --tags
+
+      # ─── 创建 GitHub Release ──────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: ${{ steps.version.outputs.new_tag }}
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+          generate_release_notes: true
+          body: |
+            ## 📱 SpeakIn ${{ steps.version.outputs.new_version }}
+
+            自动构建版本。versionCode: `${{ steps.version.outputs.version_code }}`
+
+            ### 📦 产物
+            - `app-release.apk` — 可直接安装的 Android 安装包

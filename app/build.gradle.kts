@@ -27,8 +27,27 @@ android {
         }
     }
 
+    signingConfigs {
+        // CI / 自动构建用 — 优先从 signing.properties 读取，否则用环境变量
+        create("release") {
+            val signingFile = rootProject.file("signing.properties")
+            val props = mutableMapOf<String, String>()
+            if (signingFile.exists()) {
+                signingFile.forEachLine { line ->
+                    val parts = line.split("=", limit = 2)
+                    if (parts.size == 2) props[parts[0].trim()] = parts[1].trim()
+                }
+            }
+            storeFile = file(props["storeFile"] ?: System.getenv("KEYSTORE_PATH") ?: "release.keystore")
+            storePassword = props["storePassword"] ?: System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias = props["keyAlias"] ?: System.getenv("KEY_ALIAS") ?: "ci-release"
+            keyPassword = props["keyPassword"] ?: System.getenv("KEY_PASSWORD") ?: "android"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
