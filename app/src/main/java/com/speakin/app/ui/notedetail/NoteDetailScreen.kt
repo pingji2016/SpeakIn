@@ -542,12 +542,12 @@ private fun ImageBlockView(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column {
-            // Thumbnail image — constrained height, tap to view fullscreen
+            // Thumbnail image — constrained size, tap to view fullscreen
             block.imageFilePath?.let { path ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 280.dp)
+                        .heightIn(max = 160.dp)
                         .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                         .clickable(onClick = onImageClick)
                 ) {
@@ -555,6 +555,7 @@ private fun ImageBlockView(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(File(path))
                             .crossfade(true)
+                            .size(400) // downscale to 400px wide for thumbnail
                             .build(),
                         contentDescription = block.textContent.ifEmpty { "Image (tap to enlarge)" },
                         contentScale = ContentScale.FillWidth,
