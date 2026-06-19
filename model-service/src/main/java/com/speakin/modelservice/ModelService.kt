@@ -91,6 +91,113 @@ class ModelService : Service() {
         worker = HandlerThread("model-worker").apply { start() }
         workerHandler = Handler(worker!!.looper)
         Log.i(TAG, "ModelService created (PID=${android.os.Process.myPid()})")
+
+        // DEBUG: Auto-test transcription if test file exists
+        workerHandler?.postDelayed({
+            testTranscribeFromFile()
+        }, 3000)
+    }
+
+    /** Test: transcribe a known audio file to verify the Whisper pipeline. */
+    private fun testTranscribeFromFile() {
+        try {
+            val testFile = File(filesDir, "test/helloHowareyoutoday.m4a")
+            if (!testFile.exists()) {
+                Log.i(TAG, "Test: no test file at ${testFile.absolutePath}")
+                return
+            }
+            Log.i(TAG, "Test: found test file, decoding...")
+            val pcm = readM4aAsFloat(testFile) ?: run {
+                Log.e(TAG, "Test: M4A decode failed")
+                return
+            }
+            Log.i(TAG, "Test: decoded ${pcm.size} samples, running ASR...")
+            val modelDir = File(filesDir, "whisper")
+            if (!asrEngine.load(modelDir)) {
+                Log.e(TAG, "Test: model load failed")
+                return
+            }
+            val result = asrEngine.transcribe(pcm)
+            Log.i(TAG, "Test: transcription result = '$result'")
+        } catch (e: Exception) {
+            Log.e(TAG, "Test: error", e)
+        }
+    }
+
+    /** Decode M4A/AAC file to 16kHz mono PCM float array using Android MediaExtractor. */
+    private fun readM4aAsFloat(file: File): FloatArray? {
+        return try {
+            val extractor = android.media.MediaExtractor()
+            extractor.setDataSource(file.absolutePath)
+
+            var trackIndex = -1
+            var sampleRate = 0
+            for (i in 0 until extractor.trackCount) {
+                val fmt = extractor.getTrackFormat(i)
+                val mime = fmt.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+                if (mime.startsWith("audio/")) {
+                    trackIndex = i
+                    sampleRate = fmt.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
+                    Log.i(TAG, "Test: audio track=$i, mime=$mime, sr=$sampleRate")
+                    break
+                }
+            }
+            if (trackIndex < 0) { extractor.release(); return null }
+            extractor.selectTrack(trackIndex)
+
+            val decoder = android.media.MediaCodec.createDecoderByType(
+                extractor.getTrackFormat(trackIndex).getString(android.media.MediaFormat.KEY_MIME)!!
+            )
+            decoder.configure(extractor.getTrackFormat(trackIndex), null, null, 0)
+            decoder.start()
+
+            val samples = mutableListOf<Float>()
+            var done = false
+            val info = android.media.MediaCodec.BufferInfo()
+
+            while (!done) {
+                val inIdx = decoder.dequeueInputBuffer(10000)
+                if (inIdx >= 0) {
+                    val buf = decoder.getInputBuffer(inIdx)!!
+                    val size = extractor.readSampleData(buf, 0)
+                    if (size < 0) {
+                        decoder.queueInputBuffer(inIdx, 0, 0, 0, android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                    } else {
+                        decoder.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, 0)
+                        extractor.advance()
+                    }
+                }
+
+                val outIdx = decoder.dequeueOutputBuffer(info, 10000)
+                when {
+                    outIdx >= 0 -> {
+                        val outBuf = decoder.getOutputBuffer(outIdx)!!
+                        val shortData = ShortArray(info.size / 2)
+                        outBuf.asShortBuffer().get(shortData)
+                        outBuf.position(0)
+                        for (s in shortData) samples.add(s.toFloat() / 32768f)
+                        decoder.releaseOutputBuffer(outIdx, false)
+                    }
+                    outIdx == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {}
+                    outIdx == android.media.MediaCodec.INFO_TRY_AGAIN_LATER -> {}
+                    else -> { /* other */ }
+                }
+                if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) done = true
+            }
+
+            decoder.stop(); decoder.release(); extractor.release()
+
+            // Resample to 16kHz if needed
+            val result = if (sampleRate != 16000) {
+                resample(samples.toFloatArray(), sampleRate, 16000)
+            } else samples.toFloatArray()
+
+            Log.i(TAG, "Test: decoded ${result.size} samples @ 16kHz (${result.size / 16000f}s)")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Test: M4A decode error", e)
+            null
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

@@ -65,6 +65,7 @@ class AsrModelManager @Inject constructor(
      * 首次启动时调用，如果内部存储已有则跳过。
      */
     suspend fun prepareFromAssets(): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "Preparing ASR model from assets...")
         try {
             val dir = getModelDir()
             dir.mkdirs()
@@ -73,9 +74,11 @@ class AsrModelManager @Inject constructor(
             for (filename in files) {
                 val dest = File(dir, filename)
                 if (dest.exists() && dest.length() > 1000) {
-                    Log.i(TAG, "Model file already exists: $filename")
+                    Log.i(TAG, "Model file already exists: $filename (${dest.length() / 1024 / 1024} MB)")
                     continue
                 }
+
+                Log.i(TAG, "Copying $filename from assets to ${dest.absolutePath}")
 
                 // Try asset pack path → bundled APK assets → direct assets fallback
                 val assetPaths = listOf(
@@ -92,7 +95,7 @@ class AsrModelManager @Inject constructor(
                                 input.copyTo(output)
                             }
                         }
-                        Log.i(TAG, "Copied from assets: $assetPath → $filename")
+                        Log.i(TAG, "Copied from assets: $assetPath → $filename (${dest.length() / 1024 / 1024} MB)")
                         copied = true
                         break
                     } catch (_: Exception) {
@@ -101,13 +104,17 @@ class AsrModelManager @Inject constructor(
                 }
 
                 if (!copied) {
-                    Log.w(TAG, "Model file not found in assets: $filename")
+                    Log.w(TAG, "Model file not found in any asset path: $filename. " +
+                            "Run './gradlew downloadAllModels' to download models first.")
                 }
             }
 
-            isModelReady()
+            val ready = isModelReady()
+            Log.i(TAG, "ASR model preparation done. Ready: $ready. " +
+                    "Dir: ${dir.absolutePath}, files: ${dir.listFiles()?.joinToString { it.name } ?: "none"}")
+            ready
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare from assets", e)
+            Log.e(TAG, "Failed to prepare ASR model from assets", e)
             false
         }
     }

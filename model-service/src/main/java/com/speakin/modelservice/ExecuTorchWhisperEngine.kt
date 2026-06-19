@@ -26,8 +26,8 @@ class ExecuTorchWhisperEngine {
         private const val EOT_TOKEN = 50257
         private const val SOT_TOKEN = 50258
         private const val SOT_ZH_TOKEN = 50319
-        private const val TRANSCRIBE_TOKEN = 50362
-        private const val NOTIMESTAMPS_TOKEN = 50363
+        private const val TRANSCRIBE_TOKEN = 50358   // <|transcribe|>
+        private const val NOTIMESTAMPS_TOKEN = 50362  // <|notimestamps|>
         private const val VOCAB_SIZE = 51865
     }
 
@@ -45,7 +45,11 @@ class ExecuTorchWhisperEngine {
             Log.i(TAG, "Methods: ${methods.joinToString()}")
 
             val tokenizerFile = File(modelDir, "tokenizer.json")
-            tokenizer = if (tokenizerFile.exists()) WhisperTokenizer(tokenizerFile)
+            tokenizer = if (tokenizerFile.exists()) {
+                val t = WhisperTokenizer(tokenizerFile)
+                Log.i(TAG, "Tokenizer loaded: ${t.size} tokens")
+                t
+            }
             else {
                 Log.w(TAG, "No tokenizer found")
                 null
@@ -77,20 +81,28 @@ class ExecuTorchWhisperEngine {
         else FloatArray(N_SAMPLES).also { System.arraycopy(audioPcm, 0, it, 0, audioPcm.size) }
         onProgress?.invoke(0.1f)
 
-        // Encoder
-        val audioTensor = Tensor.fromBlob(audioInput, longArrayOf(1, N_SAMPLES.toLong()))
+        // Encoder — model expects 1D tensor [N_SAMPLES] of float32 audio
+        val audioTensor = Tensor.fromBlob(audioInput, longArrayOf(N_SAMPLES.toLong()))
         var result = module!!.execute("encode", EValue.from(audioTensor))
         val encoderOutput = result[0].toTensor()
+        val encData = encoderOutput.dataAsFloatArray
+        Log.i(TAG, "Encoder out: shape=[${encoderOutput.shape().joinToString()}], " +
+                "min=${"%.4f".format(encData.minOrNull()!!)}, max=${"%.4f".format(encData.maxOrNull()!!)}, " +
+                "nonzero=${encData.count { it != 0f }}/${encData.size}")
         onProgress?.invoke(0.4f)
 
-        // Decoder 自回归
-        val tokens = mutableListOf(SOT_TOKEN, SOT_ZH_TOKEN, TRANSCRIBE_TOKEN, NOTIMESTAMPS_TOKEN)
+        // Decoder 自回归 — full Whisper initial sequence
+        // Standard: [SOT, EN, TRANSCRIBE, NOTIMESTAMPS]
+        val initTokens = mutableListOf(SOT_TOKEN, 50259, 50358, 50362)
+        Log.i(TAG, "Init: [SOT,EN,TRANSCRIBE,NOTS]=$initTokens, Audio nonzero=${audioInput.count { it != 0f }}/${audioInput.size}")
+        val tokens = mutableListOf<Int>().also { it.addAll(initTokens) }
         for (step in tokens.size until MAX_DECODE_LEN) {
             val n = tokens.size
             val tokenArr = LongArray(MAX_DECODE_LEN) { i ->
                 if (i < n) tokens[i].toLong() else EOT_TOKEN.toLong()
             }
-            val maskArr = LongArray(MAX_DECODE_LEN) { i -> if (i < n) 1L else 0L }
+            // Try FLOAT mask instead of int64 mask
+            val maskArr = FloatArray(MAX_DECODE_LEN) { i -> if (i < n) 1f else 0f }
 
             val tokenTensor = Tensor.fromBlob(tokenArr, longArrayOf(1, MAX_DECODE_LEN.toLong()))
             val maskTensor = Tensor.fromBlob(maskArr, longArrayOf(MAX_DECODE_LEN.toLong()))
@@ -104,13 +116,24 @@ class ExecuTorchWhisperEngine {
             var nextToken = 0; var maxVal = lastLogits[0]
             for (i in 1 until lastLogits.size) { if (lastLogits[i] > maxVal) { maxVal = lastLogits[i]; nextToken = i } }
 
+            // Log first few steps for debugging
+            if (step < 5) {
+                Log.i(TAG, "Step $step: nextToken=$nextToken, maxVal=$maxVal, logits[0]=${lastLogits[0]}, logits[12]=${lastLogits[12]}, logits[EOT]=${lastLogits.getOrNull(EOT_TOKEN)}")
+            }
+
             if (nextToken == EOT_TOKEN) break
             tokens.add(nextToken)
         }
 
         onProgress?.invoke(0.9f)
-        val sotTokens = setOf(SOT_TOKEN, SOT_ZH_TOKEN, TRANSCRIBE_TOKEN, NOTIMESTAMPS_TOKEN)
-        val text = tokenizer?.decode(tokens.filter { it !in sotTokens }) ?: ""
+        // Filter out all special tokens: SOT init tokens, EOT, and any token >= EOT_TOKEN
+        val textTokens = tokens.filter { it < EOT_TOKEN }
+        val text = tokenizer?.decode(textTokens) ?: ""
+
+        // Debug: log ALL tokens (including special) and decoded text
+        Log.i(TAG, "ALL tokens (${tokens.size}): ${tokens.take(30).joinToString()}")
+        Log.i(TAG, "Text tokens (${textTokens.size}): ${textTokens.take(20).joinToString()}")
+        Log.i(TAG, "Decoded text: '$text'")
 
         onProgress?.invoke(1f)
         return text

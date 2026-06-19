@@ -156,12 +156,22 @@ tasks.register("downloadWhisperModel") {
             "whisper_tiny_xnnpack_fp32.pte" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
             "tokenizer.json" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
         )
+        // 最小文件大小检查（避免残废文件被当作"已存在"跳过）
+        val minSizes = mapOf(
+            "whisper_tiny_xnnpack_fp32.pte" to 220_000_000L,  // ~232 MB
+            "tokenizer.json" to 1_000_000L                      // ~2.5 MB
+        )
 
         files.forEach { (filename, url) ->
             val target = File(dir, filename)
-            if (target.exists() && target.length() > 1000) {
+            val minSize = minSizes[filename] ?: 1000L
+            if (target.exists() && target.length() >= minSize) {
                 println("  ✅ 已存在，跳过: $filename (${target.length() / 1024 / 1024} MB)")
                 return@forEach
+            }
+            if (target.exists()) {
+                println("  ⚠️  文件不完整 (${target.length() / 1024 / 1024} MB)，重新下载: $filename")
+                target.delete()
             }
 
             println("  ⏳ 下载: $filename ...")
