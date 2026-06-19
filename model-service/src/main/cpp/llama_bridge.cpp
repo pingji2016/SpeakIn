@@ -15,7 +15,7 @@ static llama_context* g_ctx = nullptr;
 static const llama_vocab* g_vocab = nullptr;
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_speakin_app_domain_llm_LocalLlmEngine_nativeInit(
+Java_com_speakin_modelservice_LocalLlmEngine_nativeInit(
     JNIEnv* env, jobject, jstring model_path_str) {
 
     if (g_model != nullptr) {
@@ -57,7 +57,7 @@ Java_com_speakin_app_domain_llm_LocalLlmEngine_nativeInit(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_speakin_app_domain_llm_LocalLlmEngine_nativeComplete(
+Java_com_speakin_modelservice_LocalLlmEngine_nativeComplete(
     JNIEnv* env, jobject, jstring prompt_str) {
 
     if (g_model == nullptr || g_ctx == nullptr || g_vocab == nullptr) {
@@ -128,7 +128,7 @@ Java_com_speakin_app_domain_llm_LocalLlmEngine_nativeComplete(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_speakin_app_domain_llm_LocalLlmEngine_nativeRelease(
+Java_com_speakin_modelservice_LocalLlmEngine_nativeRelease(
     JNIEnv*, jobject) {
 
     LOGI("Releasing model");

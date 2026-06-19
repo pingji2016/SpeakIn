@@ -77,10 +77,11 @@ class AsrModelManager @Inject constructor(
                     continue
                 }
 
-                // Try asset pack path first, then direct assets as fallback
+                // Try asset pack path → bundled APK assets → direct assets fallback
                 val assetPaths = listOf(
-                    "speakin_assets/$filename",  // Asset pack path
-                    filename                       // Direct assets fallback
+                    "speakin_assets/$filename",    // Play Asset Delivery asset pack
+                    "models/whisper/$filename",    // Bundled in APK assets/models/whisper/
+                    filename                         // Direct assets fallback
                 )
 
                 var copied = false

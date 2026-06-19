@@ -1,12 +1,12 @@
 package com.speakin.app.domain.polish
 
 import android.util.Log
+import com.speakin.app.domain.llm.ModelManager
 import com.speakin.app.domain.service.ModelServiceFacade
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,7 +15,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class PolishEngineImpl @Inject constructor(
-    private val modelService: ModelServiceFacade
+    private val modelService: ModelServiceFacade,
+    private val modelManager: ModelManager
 ) : PolishEngine {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -31,8 +32,7 @@ class PolishEngineImpl @Inject constructor(
                 modelService.bind()
 
                 // 确保 LLM 已加载（模型路径由 ModelManager 管理）
-                val modelsDir = File(/* context.filesDir */ "", "models")
-                val modelFile = File(modelsDir, "qwen3-0.6b-q4_k_m.gguf")
+                val modelFile = modelManager.getModelFile()
                 if (modelFile.exists()) {
                     modelService.loadLlm(modelFile)
                 }

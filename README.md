@@ -151,19 +151,8 @@ cd SpeakIn
 4. 运行 `app` 模块
 
 > **注意：** 由于项目使用了 NDK 和 C++ 代码，首次构建可能需要较长时间。
-
-### 部署模型到设备
-
-```bash
-# 创建模型目录
-adb shell mkdir -p /data/data/com.speakin.app/files/whisper/
-adb shell mkdir -p /data/data/com.speakin.app/files/models/
-
-# 推送模型文件
-adb push whisper_models/whisper_tiny_xnnpack_fp32.pte /data/data/com.speakin.app/files/whisper/
-adb push whisper_models/tokenizer.json /data/data/com.speakin.app/files/whisper/
-adb push llm_models/qwen3-0.6b-q4_k_m.gguf /data/data/com.speakin.app/files/models/
-```
+>
+> 运行 `.\gradlew downloadAllModels` 后，模型文件会自动复制到 `app/src/main/assets/models/` 并随 APK 一起打包。首次启动时，App 会自动将模型从 APK 解压到内部存储，无需手动 adb push。
 
 ## 📱 功能展示
 

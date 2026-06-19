@@ -9,6 +9,10 @@ android {
 
     defaultConfig {
         minSdk = 26
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -29,6 +33,14 @@ android {
     buildFeatures {
         aidl = true
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+    ndkVersion = "27.0.12077973"
 }
 
 dependencies {

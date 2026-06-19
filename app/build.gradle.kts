@@ -29,14 +29,10 @@ android {
         applicationId = "com.speakin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 
-        versionName = "1.0.1"
+        versionCode = (project.findProperty("releaseVersionCode") as? String)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("releaseVersionName") as? String)?.ifEmpty { null } ?: "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     signingConfigs {
@@ -74,16 +70,13 @@ android {
         compose = true
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-    ndkVersion = "27.0.12077973"
-
     // Play Asset Delivery
     assetPacks += listOf(":speakin_assets")
+
+    // 模型文件不压缩（支持 mmap 直接映射，避免解压开销）
+    androidResources {
+        noCompress += listOf("pte", "gguf")
+    }
 }
 
 dependencies {
@@ -200,11 +193,20 @@ tasks.register("downloadWhisperModel") {
         println("=".repeat(60))
         println("  📁 模型文件: ${dir.absolutePath}")
         println()
-        println("  推送到手机:")
-        println("    adb shell mkdir -p /data/data/com.speakin.app/files/whisper/")
-        println("    adb push ${dir.absolutePath}\\whisper_tiny_xnnpack_fp32.pte /data/data/com.speakin.app/files/whisper/")
-        println("    adb push ${dir.absolutePath}\\tokenizer.json /data/data/com.speakin.app/files/whisper/")
+        println("  ✅ 模型已下载完成，已复制到 assets/ 目录。")
+        println("  现在直接构建 APK 即可（模型已打包在 APK 中）：")
+        println("    .\\gradlew :app:assembleDebug")
         println("=".repeat(60))
+
+        // Copy to assets so models are bundled in APK
+        val assetsDir = file("src/main/assets/models/whisper")
+        assetsDir.mkdirs()
+        files.forEach { (filename, _) ->
+            val src = File(dir, filename)
+            if (src.exists()) {
+                src.copyTo(File(assetsDir, filename), overwrite = true)
+            }
+        }
     }
 }
 
@@ -253,10 +255,15 @@ tasks.register("downloadLlmModel") {
         println("=".repeat(60))
         println("  📁 模型文件: ${target.absolutePath}")
         println()
-        println("  推送到手机:")
-        println("    adb shell mkdir -p /data/data/com.speakin.app/files/models/")
-        println("    adb push ${target.absolutePath} /data/data/com.speakin.app/files/models/")
+        println("  ✅ 模型已下载完成，已复制到 assets/ 目录。")
+        println("  现在直接构建 APK 即可（模型已打包在 APK 中）：")
+        println("    .\\gradlew :app:assembleDebug")
         println("=".repeat(60))
+
+        // Copy to assets so model is bundled in APK
+        val assetsDir = file("src/main/assets/models")
+        assetsDir.mkdirs()
+        target.copyTo(File(assetsDir, filename), overwrite = true)
     }
 }
 
