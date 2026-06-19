@@ -146,77 +146,35 @@ val llmModelDir = rootProject.layout.projectDirectory.dir("llm_models")
 
 tasks.register("downloadWhisperModel") {
     group = "SpeakIn"
-    description = "下载 whisper-tiny ExecuTorch 模型 (.pte) 到 whisper_models/ 目录 (~233 MB)"
+    description = "复制已导出的 Whisper 模型文件到 assets（先运行 scripts/export_whisper_cpu.py 导出模型）"
 
     doLast {
-        val dir = whisperModelDir.asFile
-        dir.mkdirs()
+        val srcDir = rootProject.layout.projectDirectory.dir("whisper_models").asFile
+        val dstDir = file("src/main/assets/models/whisper")
+        dstDir.mkdirs()
 
-        val files = mapOf(
-            "whisper_tiny_xnnpack_fp32.pte" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
-            "tokenizer.json" to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
-        )
-        // 最小文件大小检查（避免残废文件被当作"已存在"跳过）
-        val minSizes = mapOf(
-            "whisper_tiny_xnnpack_fp32.pte" to 220_000_000L,  // ~232 MB
-            "tokenizer.json" to 1_000_000L                      // ~2.5 MB
+        val modelFiles = listOf(
+            "whisper_preprocess.pte",
+            "whisper_encoder.pte",
+            "whisper_decoder.pte",
+            "tokenizer.json"
         )
 
-        files.forEach { (filename, url) ->
-            val target = File(dir, filename)
-            val minSize = minSizes[filename] ?: 1000L
-            if (target.exists() && target.length() >= minSize) {
-                println("  ✅ 已存在，跳过: $filename (${target.length() / 1024 / 1024} MB)")
-                return@forEach
-            }
-            if (target.exists()) {
-                println("  ⚠️  文件不完整 (${target.length() / 1024 / 1024} MB)，重新下载: $filename")
-                target.delete()
-            }
-
-            println("  ⏳ 下载: $filename ...")
-            try {
-                val connection = URI(url).toURL().openConnection() as HttpURLConnection
-                connection.connectTimeout = 30_000
-                connection.readTimeout = 120_000
-                connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
-                connection.connect()
-
-                if (connection.responseCode != 200) {
-                    throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
-                }
-
-                target.outputStream().use { output ->
-                    connection.inputStream.use { input ->
-                        input.copyTo(output, bufferSize = 8192)
-                    }
-                }
-
-                val sizeMb = target.length() / (1024.0 * 1024.0)
-                println("  ✅ 完成: $filename (${"%.1f".format(sizeMb)} MB)")
-            } catch (e: Exception) {
-                throw RuntimeException("下载 $filename 失败: ${e.message}", e)
+        for (filename in modelFiles) {
+            val src = File(srcDir, filename)
+            if (src.exists()) {
+                src.copyTo(File(dstDir, filename), overwrite = true)
+                println("  ✅ 已复制: $filename (${src.length() / 1024 / 1024} MB)")
+            } else {
+                println("  ⚠️  未找到: $filename，请先运行: python scripts/export_whisper_cpu.py")
             }
         }
 
         println()
         println("=".repeat(60))
-        println("  📁 模型文件: ${dir.absolutePath}")
-        println()
-        println("  ✅ 模型已下载完成，已复制到 assets/ 目录。")
-        println("  现在直接构建 APK 即可（模型已打包在 APK 中）：")
+        println("  模型已就绪，直接构建 APK 即可：")
         println("    .\\gradlew :app:assembleDebug")
         println("=".repeat(60))
-
-        // Copy to assets so models are bundled in APK
-        val assetsDir = file("src/main/assets/models/whisper")
-        assetsDir.mkdirs()
-        files.forEach { (filename, _) ->
-            val src = File(dir, filename)
-            if (src.exists()) {
-                src.copyTo(File(assetsDir, filename), overwrite = true)
-            }
-        }
     }
 }
 

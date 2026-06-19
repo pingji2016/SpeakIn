@@ -26,8 +26,11 @@ class AsrModelManager @Inject constructor(
 
     companion object {
         private const val TAG = "AsrModelManager"
-        private const val MODEL_PTE = "whisper_tiny_xnnpack_fp32.pte"
-        private const val MODEL_TOKENIZER = "tokenizer.json"
+        private val MODEL_FILES = listOf(
+            "whisper_pre_enc.pte",
+            "whisper_decoder.pte",
+            "tokenizer.json"
+        )
         private const val MODEL_DIR_NAME = "whisper"
     }
 
@@ -56,8 +59,7 @@ class AsrModelManager @Inject constructor(
      */
     fun isModelReady(): Boolean {
         val dir = getModelDir()
-        return File(dir, MODEL_PTE).exists() &&
-                File(dir, MODEL_TOKENIZER).exists()
+        return MODEL_FILES.all { File(dir, it).exists() }
     }
 
     /**
@@ -70,8 +72,7 @@ class AsrModelManager @Inject constructor(
             val dir = getModelDir()
             dir.mkdirs()
 
-            val files = listOf(MODEL_PTE, MODEL_TOKENIZER)
-            for (filename in files) {
+            for (filename in MODEL_FILES) {
                 val dest = File(dir, filename)
                 if (dest.exists() && dest.length() > 1000) {
                     Log.i(TAG, "Model file already exists: $filename (${dest.length() / 1024 / 1024} MB)")
@@ -122,40 +123,14 @@ class AsrModelManager @Inject constructor(
     /**
      * 下载所有模型文件（备用方案：当 asset pack 不可用时）。
      */
+    /**
+     * 模型文件已通过 Python 脚本本地导出（scripts/export_whisper_cpu.py），
+     * 然后通过 Gradle task 或手动复制到 assets。
+     * 此方法保留用于未来可能的远程下载场景。
+     */
     suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
-        val dir = getModelDir()
-        dir.mkdirs()
-
-        try {
-            val files = listOf(
-                MODEL_PTE to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
-                MODEL_TOKENIZER to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
-            )
-
-            var completed = 0
-            val total = files.size.toFloat()
-
-            for ((filename, url) in files) {
-                val file = File(dir, filename)
-                if (file.exists() && file.length() > 1000) {
-                    Log.i(TAG, "Skipping existing file: $filename")
-                    completed++
-                    onProgress?.invoke(completed / total)
-                    continue
-                }
-
-                Log.i(TAG, "Downloading: $filename")
-                downloadFile(url, file)
-                completed++
-                onProgress?.invoke(completed / total)
-            }
-
-            Log.i(TAG, "All model files downloaded successfully")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Download failed", e)
-            false
-        }
+        Log.w(TAG, "Models are exported locally via Python script, not downloaded")
+        prepareFromAssets()
     }
 
     private fun downloadFile(urlStr: String, file: File) {
