@@ -45,6 +45,5 @@ android {
 
 dependencies {
     implementation(libs.executorch.core)
-    implementation(libs.fbjni.java)
     implementation(libs.soloader)
 }
