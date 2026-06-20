@@ -54,6 +54,8 @@ firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashly
 exoplayer-core = { group = "com.google.android.exoplayer", name = "exoplayer-core", version.ref = "exoplayer" }
 
 executorch-core = { group = "org.pytorch", name = "executorch-android", version.ref = "executorch" }
+fbjni-java = { group = "com.facebook.fbjni", name = "fbjni-java-only", version = "0.2.2" }
+soloader = { group = "com.facebook.soloader", name = "nativeloader", version = "0.10.5" }
 
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 

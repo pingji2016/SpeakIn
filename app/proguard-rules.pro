@@ -15,6 +15,10 @@
 -keep class org.pytorch.executorch.** { *; }
 -keep class com.speakin.modelservice.ExecuTorchWhisperEngine { *; }
 
+# Keep Facebook JNI (ExecuTorch depends on fbjni + SoLoader)
+-keep class com.facebook.jni.** { *; }
+-keep class com.facebook.soloader.** { *; }
+
 # Keep llama.cpp JNI
 -keep class com.speakin.app.domain.llm.LocalLlmEngine { *; }
 -keep class com.speakin.modelservice.LocalLlmEngine { *; }
