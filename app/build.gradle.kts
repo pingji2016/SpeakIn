@@ -144,35 +144,71 @@ kapt {
 val whisperModelDir = rootProject.layout.projectDirectory.dir("whisper_models")
 val llmModelDir = rootProject.layout.projectDirectory.dir("llm_models")
 
+// ── Whisper 模型下载配置 ──
+// 将导出的 .pte 文件上传到你的 HuggingFace 仓库后，修改此 URL
+val WHISPER_HF_BASE = "https://hf-mirror.com/pingji2025/whisper/resolve/main"
+val WHISPER_MODEL_FILES = listOf(
+    "whisper_pre_enc.pte"  to "Whisper pre-encoder (raw audio → hidden states)",
+    "whisper_decoder.pte"  to "Whisper decoder (autoregressive token generation)",
+    "tokenizer.json"       to "BPE tokenizer vocabulary",
+)
+
 tasks.register("downloadWhisperModel") {
     group = "SpeakIn"
-    description = "复制已导出的 Whisper 模型文件到 assets（先运行 scripts/export_whisper_cpu.py 导出模型）"
+    description = "从 HuggingFace 下载 Whisper tiny ASR 模型 (~231 MB)"
 
     doLast {
-        val srcDir = rootProject.layout.projectDirectory.dir("whisper_models").asFile
-        val dstDir = file("src/main/assets/models/whisper")
-        dstDir.mkdirs()
+        // 1. 下载到项目根目录 whisper_models/
+        val modelDir = whisperModelDir.asFile
+        modelDir.mkdirs()
 
-        val modelFiles = listOf(
-            "whisper_preprocess.pte",
-            "whisper_encoder.pte",
-            "whisper_decoder.pte",
-            "tokenizer.json"
-        )
+        for ((filename, desc) in WHISPER_MODEL_FILES) {
+            val target = File(modelDir, filename)
+            val url = "$WHISPER_HF_BASE/$filename"
 
-        for (filename in modelFiles) {
-            val src = File(srcDir, filename)
+            if (target.exists() && target.length() > 100_000) {
+                println("  ✅ 已存在: $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
+                continue
+            }
+
+            println("  ⏳ 下载: $filename ($desc) ...")
+            try {
+                val connection = URI(url).toURL().openConnection() as HttpURLConnection
+                connection.connectTimeout = 30_000
+                connection.readTimeout = 600_000
+                connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
+                connection.connect()
+
+                if (connection.responseCode != 200) {
+                    throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
+                }
+
+                target.outputStream().use { output ->
+                    connection.inputStream.use { input ->
+                        input.copyTo(output, bufferSize = 8192)
+                    }
+                }
+
+                println("  ✅ 完成: $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
+            } catch (e: Exception) {
+                throw RuntimeException("下载 $filename 失败: ${e.message}\n  请确认 HuggingFace 仓库已上传且 WHISPER_HF_BASE 配置正确", e)
+            }
+        }
+
+        // 2. 复制到 assets，让模型打包进 APK
+        val assetsDir = file("src/main/assets/models/whisper")
+        assetsDir.mkdirs()
+
+        for ((filename, _) in WHISPER_MODEL_FILES) {
+            val src = File(modelDir, filename)
             if (src.exists()) {
-                src.copyTo(File(dstDir, filename), overwrite = true)
-                println("  ✅ 已复制: $filename (${src.length() / 1024 / 1024} MB)")
-            } else {
-                println("  ⚠️  未找到: $filename，请先运行: python scripts/export_whisper_cpu.py")
+                src.copyTo(File(assetsDir, filename), overwrite = true)
             }
         }
 
         println()
         println("=".repeat(60))
-        println("  模型已就绪，直接构建 APK 即可：")
+        println("  ✅ Whisper 模型已就绪，直接构建 APK 即可：")
         println("    .\\gradlew :app:assembleDebug")
         println("=".repeat(60))
     }
@@ -250,7 +286,7 @@ tasks.register<Copy>("copyModelsToAssetPack") {
     val dstDir = rootProject.layout.projectDirectory.dir("speakin_assets/src/main/assets").asFile
 
     from(srcDir) {
-        include("whisper_tiny_xnnpack_fp32.pte", "tokenizer.json")
+        include("whisper_pre_enc.pte", "whisper_decoder.pte", "tokenizer.json")
     }
     into(dstDir)
 

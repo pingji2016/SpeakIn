@@ -96,9 +96,12 @@ jobs:
             echo "KEY_PASSWORD=android"        >> $GITHUB_ENV
           fi
 
-      # ─── 构建 Release APK ─────────────────────────────
+      # ─── 下载模型 + 构建 Release APK ──────────────────────
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Download models (Whisper ~231MB + LLM ~400MB)
+        run: ./gradlew downloadAllModels --stacktrace
 
       - name: Build release APK
         run: |
