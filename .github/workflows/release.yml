@@ -100,8 +100,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Download models (Whisper ~231MB + LLM ~400MB)
-        run: ./gradlew downloadAllModels --stacktrace
+      # Whisper 模型会在 assembleRelease 时自动下载（mergeReleaseAssets 已依赖 downloadWhisperModel）
 
       # ─── 构建 Release APK ─────────────────────────────
       - name: Build release APK

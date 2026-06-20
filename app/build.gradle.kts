@@ -144,8 +144,37 @@ kapt {
 val whisperModelDir = rootProject.layout.projectDirectory.dir("whisper_models")
 val llmModelDir = rootProject.layout.projectDirectory.dir("llm_models")
 
-// ── Whisper 模型下载配置 ──
-// 将导出的 .pte 文件上传到你的 HuggingFace 仓库后，修改此 URL
+// ── 通用下载工具（自动跟踪 301/302/307/308 重定向） ──
+fun downloadWithRedirect(urlStr: String, target: File, timeoutMs: Int = 600_000) {
+    var url = urlStr
+    var redirects = 0
+    while (redirects++ < 10) {
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        connection.connectTimeout = 30_000
+        connection.readTimeout = timeoutMs
+        connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
+        connection.instanceFollowRedirects = false
+        connection.connect()
+
+        val code = connection.responseCode
+        if (code in 300..399) {
+            val newUrl = connection.getHeaderField("Location")
+            connection.disconnect()
+            if (newUrl == null) throw RuntimeException("Redirect without Location header")
+            url = if (newUrl.startsWith("http")) newUrl else URI(url).resolve(newUrl).toString()
+            continue
+        }
+        if (code != 200) throw RuntimeException("HTTP $code: ${connection.responseMessage}")
+
+        target.outputStream().use { output ->
+            connection.inputStream.use { input -> input.copyTo(output, bufferSize = 8192) }
+        }
+        connection.disconnect()
+        return
+    }
+    throw RuntimeException("Too many redirects")
+}
+
 val WHISPER_HF_BASE = "https://hf-mirror.com/pingji2025/whisper/resolve/main"
 val WHISPER_MODEL_FILES = listOf(
     "whisper_pre_enc.pte"  to "Whisper pre-encoder (raw audio → hidden states)",
@@ -173,22 +202,7 @@ tasks.register("downloadWhisperModel") {
 
             println("  ⏳ 下载: $filename ($desc) ...")
             try {
-                val connection = URI(url).toURL().openConnection() as HttpURLConnection
-                connection.connectTimeout = 30_000
-                connection.readTimeout = 600_000
-                connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
-                connection.connect()
-
-                if (connection.responseCode != 200) {
-                    throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
-                }
-
-                target.outputStream().use { output ->
-                    connection.inputStream.use { input ->
-                        input.copyTo(output, bufferSize = 8192)
-                    }
-                }
-
+                downloadWithRedirect(url, target)
                 println("  ✅ 完成: $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
             } catch (e: Exception) {
                 throw RuntimeException("下载 $filename 失败: ${e.message}\n  请确认 HuggingFace 仓库已上传且 WHISPER_HF_BASE 配置正确", e)
@@ -233,22 +247,7 @@ tasks.register("downloadLlmModel") {
 
         println("  ⏳ 下载: $filename (~400 MB, 可能需要几分钟) ...")
         try {
-            val connection = URI(url).toURL().openConnection() as HttpURLConnection
-            connection.connectTimeout = 30_000
-            connection.readTimeout = 600_000
-            connection.setRequestProperty("User-Agent", "SpeakIn-Build/1.0")
-            connection.connect()
-
-            if (connection.responseCode != 200) {
-                throw RuntimeException("HTTP ${connection.responseCode}: ${connection.responseMessage}")
-            }
-
-            target.outputStream().use { output ->
-                connection.inputStream.use { input ->
-                    input.copyTo(output, bufferSize = 8192)
-                }
-            }
-
+            downloadWithRedirect(url, target)
             val sizeMb = target.length() / (1024.0 * 1024.0)
             println("  ✅ 完成: $filename (${"%.1f".format(sizeMb)} MB)")
         } catch (e: Exception) {
@@ -277,12 +276,10 @@ tasks.register("downloadAllModels") {
     dependsOn("downloadWhisperModel", "downloadLlmModel")
 }
 
-// 构建 APK 时自动下载模型（已下载则跳过）
+// 构建 APK 时自动下载 Whisper 模型（已下载则跳过）
 afterEvaluate {
     tasks.matching { it.name in setOf("mergeReleaseAssets", "mergeDebugAssets") }
-        .configureEach { dependsOn("downloadAllModels") }
-    tasks.matching { it.name == "compressReleaseAssets" || it.name == "compressDebugAssets" }
-        .configureEach { mustRunAfter("downloadAllModels") }
+        .configureEach { dependsOn("downloadWhisperModel") }
 }
 
 // 将 whisper 模型文件复制到 asset pack 中（用于 AAB 构建）
