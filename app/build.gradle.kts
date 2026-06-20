@@ -48,19 +48,6 @@ android {
         }
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file(signingProps["storeFile"]
-                ?: System.getenv("KEYSTORE_PATH") ?: "release.keystore")
-            storePassword = signingProps["storePassword"]
-                ?: System.getenv("KEYSTORE_PASSWORD") ?: "android"
-            keyAlias = signingProps["keyAlias"]
-                ?: System.getenv("KEY_ALIAS") ?: "ci-release"
-            keyPassword = signingProps["keyPassword"]
-                ?: System.getenv("KEY_PASSWORD") ?: "android"
-        }
-    }
-
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
