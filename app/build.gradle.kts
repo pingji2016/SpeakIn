@@ -277,6 +277,14 @@ tasks.register("downloadAllModels") {
     dependsOn("downloadWhisperModel", "downloadLlmModel")
 }
 
+// 构建 APK 时自动下载模型（已下载则跳过）
+afterEvaluate {
+    tasks.matching { it.name in setOf("mergeReleaseAssets", "mergeDebugAssets") }
+        .configureEach { dependsOn("downloadAllModels") }
+    tasks.matching { it.name == "compressReleaseAssets" || it.name == "compressDebugAssets" }
+        .configureEach { mustRunAfter("downloadAllModels") }
+}
+
 // 将 whisper 模型文件复制到 asset pack 中（用于 AAB 构建）
 tasks.register<Copy>("copyModelsToAssetPack") {
     group = "SpeakIn"
