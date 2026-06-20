@@ -14,6 +14,7 @@ import com.speakin.app.domain.audio.AudioPlayer
 import com.speakin.app.domain.audio.AudioRecorder
 import com.speakin.app.domain.llm.ModelManager
 import com.speakin.app.domain.llm.ModelState
+import com.speakin.app.domain.model.AsrModelManager
 import com.speakin.app.domain.polish.PolishEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,8 @@ data class NoteDetailUiState(
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
     val playingBlockId: String? = null,
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val transcribeError: String? = null
 )
 
 @HiltViewModel
@@ -43,6 +45,7 @@ class NoteDetailViewModel @Inject constructor(
     private val audioPlayer: AudioPlayer,
     private val asrEngine: AsrEngine,
     private val polishEngine: PolishEngine,
+    private val asrModelManager: AsrModelManager,
     @AudioDir private val audioOutputDir: File,
     @ImageDir private val imageOutputDir: File,
     private val modelManager: ModelManager
@@ -70,6 +73,10 @@ class NoteDetailViewModel @Inject constructor(
             repository.getBlocksByNoteId(noteId).collect { blocks ->
                 _uiState.value = _uiState.value.copy(blocks = blocks)
             }
+        }
+        // 提前准备 ASR 模型（从 APK assets 解压到内部存储）
+        viewModelScope.launch {
+            asrModelManager.prepareFromAssets()
         }
     }
 
@@ -99,12 +106,20 @@ class NoteDetailViewModel @Inject constructor(
             return
         }
 
-        _uiState.value = _uiState.value.copy(isRecording = false, isTranscribing = true)
+        _uiState.value = _uiState.value.copy(
+            isRecording = false,
+            isTranscribing = true,
+            transcribeError = null
+        )
 
         viewModelScope.launch {
+            // 兜底确保 ASR 模型已解压就绪
+            asrModelManager.prepareFromAssets()
+
             val block = repository.addVoiceBlock(noteId, file, durationMs)
 
             withContext(Dispatchers.IO) {
+                var errorMsg: String? = null
                 val transcribeSignal = kotlinx.coroutines.CompletableDeferred<String>()
                 asrEngine.transcribe(file, object : AsrEngine.Callback {
                     override fun onResult(text: String) {
@@ -112,14 +127,15 @@ class NoteDetailViewModel @Inject constructor(
                     }
                     override fun onProgress(progress: Float) {}
                     override fun onError(error: String) {
+                        errorMsg = error
                         transcribeSignal.complete("")
                     }
                 })
                 val rawText = transcribeSignal.await()
 
-                repository.updateTranscription(block.id, rawText)
-
                 if (rawText.isNotBlank()) {
+                    repository.updateTranscription(block.id, rawText)
+
                     val polishSignal = kotlinx.coroutines.CompletableDeferred<String>()
                     polishEngine.polish(rawText, object : PolishEngine.Callback {
                         override fun onResult(text: String) {
@@ -131,6 +147,9 @@ class NoteDetailViewModel @Inject constructor(
                     })
                     val polishedText = polishSignal.await()
                     repository.updatePolishedText(block.id, polishedText)
+                } else if (errorMsg != null) {
+                    // 转写失败，记录错误供 UI 展示
+                    _uiState.value = _uiState.value.copy(transcribeError = errorMsg)
                 }
             }
 

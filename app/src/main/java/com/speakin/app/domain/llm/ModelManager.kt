@@ -1,6 +1,7 @@
 package com.speakin.app.domain.llm
 
 import android.content.Context
+import com.speakin.app.domain.service.ModelServiceFacade
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,11 +33,12 @@ enum class ModelStatus {
 @Singleton
 class ModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val engine: LocalLlmEngine
+    private val modelService: ModelServiceFacade
 ) {
 
     companion object {
         private const val MODEL_FILENAME = "qwen3-0.6b-q4_k_m.gguf"
+        private const val ASSET_MODEL_PATH = "models/$MODEL_FILENAME"
         private val MODEL_URLS = listOf(
             "https://hf-mirror.com/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
             "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
@@ -61,7 +63,8 @@ class ModelManager @Inject constructor(
     suspend fun checkAndPrepare() {
         val modelFile = getModelFile()
 
-        if (engine.isLoaded) {
+        // Check if model is already loaded in remote process
+        if (modelService.isLlmLoaded()) {
             _modelState.value = ModelState(status = ModelStatus.Ready)
             return
         }
@@ -71,7 +74,32 @@ class ModelManager @Inject constructor(
             return
         }
 
+        // Try to copy from assets (bundled in APK)
+        if (copyModelFromAssets()) {
+            loadModel(modelFile)
+            return
+        }
+
         _modelState.value = ModelState(status = ModelStatus.NotDownloaded)
+    }
+
+    /**
+     * 从 APK assets 中拷贝 LLM 模型到内部存储。
+     * 模型通过 Gradle downloadLlmModel task 打包到 assets/models/ 中。
+     */
+    private fun copyModelFromAssets(): Boolean {
+        return try {
+            val modelFile = getModelFile()
+            modelFile.parentFile?.mkdirs()
+            context.assets.open(ASSET_MODEL_PATH).use { input ->
+                FileOutputStream(modelFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            modelFile.exists() && modelFile.length() > 100_000_000
+        } catch (e: Exception) {
+            false
+        }
     }
 
     suspend fun downloadModel() {
@@ -148,16 +176,16 @@ class ModelManager @Inject constructor(
         _modelState.value = ModelState(status = ModelStatus.Loading)
 
         try {
-            withContext(Dispatchers.IO) {
-                val success = engine.loadModel(modelFile)
-                if (success) {
-                    _modelState.value = ModelState(status = ModelStatus.Ready)
-                } else {
-                    _modelState.value = ModelState(
-                        status = ModelStatus.Error,
-                        error = "Failed to load model"
-                    )
-                }
+            // Bind to model service and load via AIDL (runs in :model process)
+            modelService.bind()
+            val success = modelService.loadLlm(modelFile)
+            if (success) {
+                _modelState.value = ModelState(status = ModelStatus.Ready)
+            } else {
+                _modelState.value = ModelState(
+                    status = ModelStatus.Error,
+                    error = "Failed to load model"
+                )
             }
         } catch (e: Exception) {
             _modelState.value = ModelState(
@@ -168,7 +196,7 @@ class ModelManager @Inject constructor(
     }
 
     fun release() {
-        engine.release()
+        modelService.releaseAll()
         _modelState.value = ModelState(status = ModelStatus.NotDownloaded)
     }
 }

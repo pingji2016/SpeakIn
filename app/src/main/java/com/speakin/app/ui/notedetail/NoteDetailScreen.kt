@@ -309,6 +309,69 @@ fun NoteDetailScreen(
                         )
                     }
                 }
+            } else if (uiState.transcribeError != null) {
+                // Show error + blocks list
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "⚠",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = uiState.transcribeError ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                    item { Spacer(modifier = Modifier.height(4.dp)) }
+                    items(uiState.blocks, key = { it.id }) { block ->
+                        when (block.blockType) {
+                            BlockType.VOICE -> VoiceBlockView(
+                                block = block,
+                                isPlaying = block.id == uiState.playingBlockId,
+                                onPlayPause = {
+                                    if (uiState.playingBlockId == block.id) {
+                                        viewModel.onPlaybackStopped()
+                                    } else {
+                                        viewModel.onPlaybackStarted(block.id)
+                                    }
+                                },
+                                onDelete = { viewModel.deleteBlock(block.id) }
+                            )
+                            BlockType.TEXT -> TextBlockView(
+                                block = block,
+                                onTextChanged = { viewModel.updateTextBlock(block.id, it) },
+                                onDelete = { viewModel.deleteBlock(block.id) }
+                            )
+                            BlockType.IMAGE -> ImageBlockView(
+                                block = block,
+                                onImageClick = { fullscreenImagePath = block.imageFilePath },
+                                onDelete = { viewModel.deleteBlock(block.id) }
+                            )
+                        }
+                    }
+                    item { Spacer(modifier = Modifier.height(120.dp)) }
+                }
             } else if (uiState.isLoading) {
                 Box(
                     modifier = Modifier

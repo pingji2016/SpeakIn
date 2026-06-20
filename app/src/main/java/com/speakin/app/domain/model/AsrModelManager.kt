@@ -26,8 +26,11 @@ class AsrModelManager @Inject constructor(
 
     companion object {
         private const val TAG = "AsrModelManager"
-        private const val MODEL_PTE = "whisper_tiny_xnnpack_fp32.pte"
-        private const val MODEL_TOKENIZER = "tokenizer.json"
+        private val MODEL_FILES = listOf(
+            "whisper_pre_enc.pte",
+            "whisper_decoder.pte",
+            "tokenizer.json"
+        )
         private const val MODEL_DIR_NAME = "whisper"
     }
 
@@ -56,8 +59,7 @@ class AsrModelManager @Inject constructor(
      */
     fun isModelReady(): Boolean {
         val dir = getModelDir()
-        return File(dir, MODEL_PTE).exists() &&
-                File(dir, MODEL_TOKENIZER).exists()
+        return MODEL_FILES.all { File(dir, it).exists() }
     }
 
     /**
@@ -65,22 +67,25 @@ class AsrModelManager @Inject constructor(
      * 首次启动时调用，如果内部存储已有则跳过。
      */
     suspend fun prepareFromAssets(): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "Preparing ASR model from assets...")
         try {
             val dir = getModelDir()
             dir.mkdirs()
 
-            val files = listOf(MODEL_PTE, MODEL_TOKENIZER)
-            for (filename in files) {
+            for (filename in MODEL_FILES) {
                 val dest = File(dir, filename)
                 if (dest.exists() && dest.length() > 1000) {
-                    Log.i(TAG, "Model file already exists: $filename")
+                    Log.i(TAG, "Model file already exists: $filename (${dest.length() / 1024 / 1024} MB)")
                     continue
                 }
 
-                // Try asset pack path first, then direct assets as fallback
+                Log.i(TAG, "Copying $filename from assets to ${dest.absolutePath}")
+
+                // Try asset pack path → bundled APK assets → direct assets fallback
                 val assetPaths = listOf(
-                    "speakin_assets/$filename",  // Asset pack path
-                    filename                       // Direct assets fallback
+                    "speakin_assets/$filename",    // Play Asset Delivery asset pack
+                    "models/whisper/$filename",    // Bundled in APK assets/models/whisper/
+                    filename                         // Direct assets fallback
                 )
 
                 var copied = false
@@ -91,7 +96,7 @@ class AsrModelManager @Inject constructor(
                                 input.copyTo(output)
                             }
                         }
-                        Log.i(TAG, "Copied from assets: $assetPath → $filename")
+                        Log.i(TAG, "Copied from assets: $assetPath → $filename (${dest.length() / 1024 / 1024} MB)")
                         copied = true
                         break
                     } catch (_: Exception) {
@@ -100,13 +105,17 @@ class AsrModelManager @Inject constructor(
                 }
 
                 if (!copied) {
-                    Log.w(TAG, "Model file not found in assets: $filename")
+                    Log.w(TAG, "Model file not found in any asset path: $filename. " +
+                            "Run './gradlew downloadAllModels' to download models first.")
                 }
             }
 
-            isModelReady()
+            val ready = isModelReady()
+            Log.i(TAG, "ASR model preparation done. Ready: $ready. " +
+                    "Dir: ${dir.absolutePath}, files: ${dir.listFiles()?.joinToString { it.name } ?: "none"}")
+            ready
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare from assets", e)
+            Log.e(TAG, "Failed to prepare ASR model from assets", e)
             false
         }
     }
@@ -114,40 +123,14 @@ class AsrModelManager @Inject constructor(
     /**
      * 下载所有模型文件（备用方案：当 asset pack 不可用时）。
      */
+    /**
+     * 模型文件已通过 Python 脚本本地导出（scripts/export_whisper_cpu.py），
+     * 然后通过 Gradle task 或手动复制到 assets。
+     * 此方法保留用于未来可能的远程下载场景。
+     */
     suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
-        val dir = getModelDir()
-        dir.mkdirs()
-
-        try {
-            val files = listOf(
-                MODEL_PTE to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-tiny/resolve/main/xnnpack/whisper_tiny_xnnpack_fp32.pte",
-                MODEL_TOKENIZER to "https://hf-mirror.com/software-mansion/react-native-executorch-whisper-small/resolve/main/tokenizer.json"
-            )
-
-            var completed = 0
-            val total = files.size.toFloat()
-
-            for ((filename, url) in files) {
-                val file = File(dir, filename)
-                if (file.exists() && file.length() > 1000) {
-                    Log.i(TAG, "Skipping existing file: $filename")
-                    completed++
-                    onProgress?.invoke(completed / total)
-                    continue
-                }
-
-                Log.i(TAG, "Downloading: $filename")
-                downloadFile(url, file)
-                completed++
-                onProgress?.invoke(completed / total)
-            }
-
-            Log.i(TAG, "All model files downloaded successfully")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Download failed", e)
-            false
-        }
+        Log.w(TAG, "Models are exported locally via Python script, not downloaded")
+        prepareFromAssets()
     }
 
     private fun downloadFile(urlStr: String, file: File) {

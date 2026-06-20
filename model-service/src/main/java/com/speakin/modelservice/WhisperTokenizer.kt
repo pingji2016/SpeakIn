@@ -11,13 +11,15 @@ class WhisperTokenizer(tokenizerFile: File) {
     private val idToToken: MutableMap<Int, String> = mutableMapOf()
     private val byteDecoder: MutableMap<Int, Byte> = mutableMapOf()
     private val specialTokens: Set<Int>
+    val size: Int get() = idToToken.size
 
     companion object {
         private const val EOT_TOKEN = 50257
         private const val SOT_TOKEN = 50258
         private const val SOT_ZH_TOKEN = 50319
-        private const val TRANSCRIBE_TOKEN = 50362
+        private const val TRANSCRIBE_TOKEN = 50359
         private const val NOTIMESTAMPS_TOKEN = 50363
+        private const val NOSPEECH_TOKEN = 50362
     }
 
     init {
