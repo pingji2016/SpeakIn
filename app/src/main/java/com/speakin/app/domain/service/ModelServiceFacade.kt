@@ -146,6 +146,10 @@ class ModelServiceFacade @Inject constructor(
                     cont.resume(Result.success(text))
                 }
 
+                override fun onPartialResult(text: String) {
+                    // 文件转写不使用中间结果
+                }
+
                 override fun onError(error: String) {
                     if (cont.isActive) cont.resume(Result.failure(Exception(error)))
                 }
@@ -156,6 +160,44 @@ class ModelServiceFacade @Inject constructor(
             }
             svc.transcribe(audioFile.absolutePath, callback)
         }
+    }
+
+    /**
+     * 流式转写 PCM 数据（跳过文件 I/O，低延迟）。
+     *
+     * @param pcmData PCM FloatArray 数据
+     * @param onPartialResult 中间结果回调（可选）
+     */
+    suspend fun transcribeAudioData(
+        pcmData: FloatArray,
+        onPartialResult: ((String) -> Unit)? = null
+    ): Result<String> {
+        val svc = awaitService() ?: return Result.failure(Exception("服务未连接"))
+
+        return suspendCancellableCoroutine { cont ->
+            val callback = object : IModelServiceCallback.Stub() {
+                override fun onPartialResult(text: String) {
+                    onPartialResult?.invoke(text)
+                }
+                override fun onResult(text: String) {
+                    cont.resume(Result.success(text))
+                }
+                override fun onError(error: String) {
+                    if (cont.isActive) cont.resume(Result.failure(Exception(error)))
+                }
+                override fun onProgress(progress: Float) {
+                    // 流式场景不需要进度
+                }
+            }
+            svc.transcribePcm(pcmData, callback)
+        }
+    }
+
+    /**
+     * 取消当前流式转写。
+     */
+    fun cancelTranscribe() {
+        try { service?.cancelTranscribe() } catch (_: Exception) {}
     }
 
     /**

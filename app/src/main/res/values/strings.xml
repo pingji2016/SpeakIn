@@ -56,4 +56,13 @@
     <string name="delete_note_message">Are you sure you want to delete this note? This cannot be undone.</string>
     <string name="delete_block_title">Delete Block</string>
     <string name="delete_block_message">Delete this content block?</string>
+
+    <!-- Streaming ASR / Live Caption -->
+    <string name="live_preview">Live · may change</string>
+
+    <!-- ASR Model Download -->
+    <string name="asr_model_download_title">Download Speech Recognition</string>
+    <string name="asr_model_download_desc">Download ~180MB once, then use offline forever</string>
+    <string name="asr_model_required_title">Speech Model Required</string>
+    <string name="asr_model_required_desc">Download the speech recognition model to start transcribing. All processing is done on-device.</string>
 </resources>

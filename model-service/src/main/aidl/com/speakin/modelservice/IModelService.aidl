@@ -33,6 +33,21 @@ interface IModelService {
 
     // ─── 生命周期 ────────────────────────────────────────
 
+    // ─── 流式 ASR（新增） ──────────────────────────────
+
+    /**
+     * 流式转写：直接接收 PCM FloatArray 数据。
+     * 跳过文件 I/O 和 WAV 解析，降低延迟。
+     * 结果通过 callback.onPartialResult() 回传中间结果，
+     * 通过 callback.onResult() 回传最终结果。
+     */
+    void transcribePcm(in float[] pcmData, IModelServiceCallback callback);
+
+    /** 取消正在进行的流式转写 */
+    void cancelTranscribe();
+
+    // ─── 生命周期 ────────────────────────────────────────
+
     /** 释放所有模型资源 */
     void release();
 }

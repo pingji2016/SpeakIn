@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -32,6 +35,12 @@ class AsrModelManager @Inject constructor(
             "tokenizer.json"
         )
         private const val MODEL_DIR_NAME = "whisper"
+
+        // 模型下载 URL（CDN 主 URL + 备用镜像）
+        private val MODEL_DOWNLOAD_URLS = listOf(
+            "https://cdn.speakin.app/models/whisper-tiny/v1",
+            "https://hf-mirror.com/SpeakIn/whisper-tiny/resolve/main"
+        )
     }
 
     data class ModelState(
@@ -47,6 +56,10 @@ class AsrModelManager @Inject constructor(
         Error
     }
 
+    private val _modelState = MutableStateFlow(ModelState())
+    /** ASR 模型的当前状态（供 UI 观察） */
+    val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
+
     /**
      * 获取模型文件存放目录：context.filesDir/whisper/
      */
@@ -55,11 +68,116 @@ class AsrModelManager @Inject constructor(
     }
 
     /**
-     * 检查模型是否已就绪（所有必需文件存在）。
+     * 检查模型是否已就绪（所有必需文件存在且非空）。
      */
     fun isModelReady(): Boolean {
         val dir = getModelDir()
-        return MODEL_FILES.all { File(dir, it).exists() }
+        return MODEL_FILES.all { File(dir, it).exists() && File(dir, it).length() > 1000 }
+    }
+
+    /**
+     * 确保模型可用。
+     *
+     * 优先级：
+     * 1. 已下载 → 直接使用
+     * 2. APK assets → 复制使用（兼容旧版升级用户）
+     * 3. 都没有 → 返回 false（调用方触发网络下载）
+     */
+    suspend fun ensureModelAvailable(): Boolean {
+        // 更新状态
+        if (isModelReady()) {
+            _modelState.value = ModelState(status = Status.Ready, progress = 1f)
+            return true
+        }
+
+        _modelState.value = ModelState(status = Status.Downloading, progress = 0f)
+
+        // 尝试 assets 复制（兼容升级用户）
+        val assetsReady = prepareFromAssets()
+        if (assetsReady) {
+            _modelState.value = ModelState(status = Status.Ready, progress = 1f)
+            return true
+        }
+
+        _modelState.value = ModelState(status = Status.NotDownloaded)
+        return false
+    }
+
+    /**
+     * 从网络下载所有模型文件。
+     * 需要 ensureModelAvailable() 返回 false 时调用。
+     */
+    suspend fun downloadModel(): Boolean {
+        val dir = getModelDir()
+        dir.mkdirs()
+
+        _modelState.value = ModelState(status = Status.Downloading, progress = 0f)
+
+        var totalDownloaded = 0L
+        val totalFiles = MODEL_FILES.size
+
+        return try {
+            withContext(Dispatchers.IO) {
+                for ((index, filename) in MODEL_FILES.withIndex()) {
+
+                    val dest = File(dir, filename)
+
+                    // 已存在且大小合理则跳过
+                    if (dest.exists() && dest.length() > 1000) {
+                        totalDownloaded++
+                        val progress = totalDownloaded.toFloat() / totalFiles
+                        _modelState.value = ModelState(status = Status.Downloading, progress = progress)
+                        continue
+                    }
+
+                    // 尝试每个 URL 镜像
+                    var downloadSuccess = false
+                    for (baseUrl in MODEL_DOWNLOAD_URLS) {
+                        try {
+                            val url = "$baseUrl/$filename"
+                            Log.i(TAG, "Downloading $url → ${dest.absolutePath}")
+                            downloadFile(url, dest)
+                            if (dest.exists() && dest.length() > 1000) {
+                                downloadSuccess = true
+                                break
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to download from $baseUrl: ${e.message}")
+                        }
+                    }
+
+                    if (!downloadSuccess) {
+                        _modelState.value = ModelState(
+                            status = Status.Error,
+                            error = "下载 $filename 失败，请检查网络后重试"
+                        )
+                        return@withContext false
+                    }
+
+                    totalDownloaded++
+                    val progress = totalDownloaded.toFloat() / totalFiles
+                    _modelState.value = ModelState(status = Status.Downloading, progress = progress)
+                }
+
+                if (isModelReady()) {
+                    _modelState.value = ModelState(status = Status.Ready, progress = 1f)
+                    true
+                } else {
+                    _modelState.value = ModelState(
+                        status = Status.Error,
+                        error = "模型文件校验失败"
+                    )
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "downloadModel failed", e)
+            _modelState.value = ModelState(
+                status = Status.Error,
+                error = e.message ?: "下载失败"
+            )
+            false
+        }
     }
 
     /**
@@ -121,36 +239,39 @@ class AsrModelManager @Inject constructor(
     }
 
     /**
-     * 下载所有模型文件（备用方案：当 asset pack 不可用时）。
+     * 下载所有模型文件（从网络下载，用于首次使用或恢复）。
+     * 优先使用 ensureModelAvailable()（会先尝试 assets），
+     * 此方法直接走网络下载路径。
      */
-    /**
-     * 模型文件已通过 Python 脚本本地导出（scripts/export_whisper_cpu.py），
-     * 然后通过 Gradle task 或手动复制到 assets。
-     * 此方法保留用于未来可能的远程下载场景。
-     */
-    suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean = withContext(Dispatchers.IO) {
-        Log.w(TAG, "Models are exported locally via Python script, not downloaded")
-        prepareFromAssets()
+    suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean {
+        Log.i(TAG, "Starting model download...")
+        return downloadModel()
     }
 
     private fun downloadFile(urlStr: String, file: File) {
         val url = URL(urlStr)
         val connection = url.openConnection() as HttpURLConnection
         connection.connectTimeout = 30_000
-        connection.readTimeout = 60_000
+        connection.readTimeout = 300_000  // 5 min for large files
+        connection.setRequestProperty("User-Agent", "SpeakIn/1.0")
+        connection.instanceFollowRedirects = true
         connection.connect()
 
-        val inputStream = connection.inputStream
-        val outputStream = FileOutputStream(file)
-        val buffer = ByteArray(8192)
-        var bytesRead: Int
-
-        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-            outputStream.write(buffer, 0, bytesRead)
+        if (connection.responseCode != 200) {
+            connection.disconnect()
+            throw RuntimeException("HTTP ${connection.responseCode} for $urlStr")
         }
 
-        outputStream.flush()
-        outputStream.close()
-        inputStream.close()
+        connection.inputStream.use { inputStream ->
+            FileOutputStream(file).use { outputStream ->
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                }
+                outputStream.flush()
+            }
+        }
+        connection.disconnect()
     }
 }

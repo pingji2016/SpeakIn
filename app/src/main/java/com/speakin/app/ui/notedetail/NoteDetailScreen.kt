@@ -78,6 +78,7 @@ import androidx.core.content.ContextCompat
 import com.speakin.app.R
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
+import com.speakin.app.ui.recording.RecordingBar
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -291,25 +292,24 @@ fun NoteDetailScreen(
                 }
             }
         ) { padding ->
-            if (uiState.isTranscribing) {
-                // Transcribing banner
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            stringResource(R.string.transcribing),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                if (uiState.isTranscribing && uiState.blocks.isEmpty()) {
+                    // Transcribing banner (only when no blocks to show)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                stringResource(R.string.transcribing),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
-            } else if (uiState.transcribeError != null) {
+                } else if (uiState.transcribeError != null) {
                 // Show error + blocks list
                 LazyColumn(
                     modifier = Modifier
@@ -434,6 +434,20 @@ fun NoteDetailScreen(
                     item { Spacer(modifier = Modifier.height(120.dp)) }
                 }
             }
+
+            // ─── RecordingBar: 录音/转写状态底部栏 ───
+            if (uiState.isRecording || (uiState.isTranscribing && uiState.blocks.isNotEmpty())) {
+                RecordingBar(
+                    isRecording = uiState.isRecording,
+                    onStartRecording = { requestMicThenRecord() },
+                    onStopRecording = { viewModel.stopRecording() },
+                    liveCaption = uiState.liveCaption,
+                    liveCaptionStableLen = uiState.liveCaptionStableLen,
+                    isTranscribing = uiState.isTranscribing,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+        }
         }
     }
 }

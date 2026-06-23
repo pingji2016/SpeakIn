@@ -1,5 +1,6 @@
 package com.speakin.app.ui.notedetail
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,7 @@ import com.speakin.app.data.repository.NoteRepository
 import com.speakin.app.di.AudioDir
 import com.speakin.app.di.ImageDir
 import com.speakin.app.domain.asr.AsrEngine
+import com.speakin.app.domain.asr.StreamingAsrSession
 import com.speakin.app.domain.audio.AudioPlayer
 import com.speakin.app.domain.audio.AudioRecorder
 import com.speakin.app.domain.llm.ModelManager
@@ -34,7 +36,11 @@ data class NoteDetailUiState(
     val isTranscribing: Boolean = false,
     val playingBlockId: String? = null,
     val isLoading: Boolean = true,
-    val transcribeError: String? = null
+    val transcribeError: String? = null,
+    // ─── 流式识别 / 实时字幕 ───
+    val liveCaption: String = "",
+    val liveCaptionStableLen: Int = 0,
+    val liveCaptionIsStable: Boolean = false
 )
 
 @HiltViewModel
@@ -57,6 +63,8 @@ class NoteDetailViewModel @Inject constructor(
     val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
     private var currentAudioFile: File? = null
+    private var streamingSession: StreamingAsrSession? = null
+    private var accumulatedFinalText: String = ""
 
     val modelState: StateFlow<ModelState> = modelManager.modelState
 
@@ -94,17 +102,71 @@ class NoteDetailViewModel @Inject constructor(
         val started = audioRecorder.start(file)
         if (started) {
             currentAudioFile = file
-            _uiState.value = _uiState.value.copy(isRecording = true)
+            _uiState.value = _uiState.value.copy(
+                isRecording = true,
+                liveCaption = "",
+                liveCaptionStableLen = 0,
+                liveCaptionIsStable = false
+            )
+
+            // ─── 启动流式识别 ───
+            startStreamingRecognition()
         }
     }
 
+    /**
+     * 启动流式识别会话，将 AudioRecorder 的音频块连接到 ASR 引擎。
+     */
+    private fun startStreamingRecognition() {
+        val session = asrEngine.startStreaming(object : AsrEngine.StreamingCallback {
+            override fun onPartialResult(result: AsrEngine.StreamingResult) {
+                _uiState.value = _uiState.value.copy(
+                    liveCaption = result.text,
+                    liveCaptionStableLen = result.stableLen,
+                    liveCaptionIsStable = result.isStable
+                )
+            }
+
+            override fun onFinalResult(text: String) {
+                // 最终结果作为 fallback 文本暂存
+                accumulatedFinalText = text
+            }
+
+            override fun onError(error: String) {
+                // 流式识别失败不中断录音，用户仍可在停止后获得完整转写
+                Log.w(TAG, "Streaming recognition error: $error")
+            }
+        })
+
+        streamingSession = session
+
+        // 将录音块的原始 ShortArray 数据直接喂给 ASR 会话
+        audioRecorder.setChunkListener(object : AudioRecorder.AudioChunkListener {
+            override fun onAudioChunk(chunk: ShortArray) {
+                session.feedAudio(chunk)
+            }
+        })
+    }
+
     fun stopRecording() {
+        // 停止接收音频块
+        audioRecorder.setChunkListener(null)
+
         val durationMs = audioRecorder.stop()
         val file = currentAudioFile
         if (file == null || durationMs <= 0) {
-            _uiState.value = _uiState.value.copy(isRecording = false)
+            streamingSession?.cancel()
+            streamingSession = null
+            _uiState.value = _uiState.value.copy(
+                isRecording = false,
+                liveCaption = "",
+                liveCaptionStableLen = 0
+            )
             return
         }
+
+        // 结束流式会话
+        streamingSession?.finish()
 
         _uiState.value = _uiState.value.copy(
             isRecording = false,
@@ -154,6 +216,7 @@ class NoteDetailViewModel @Inject constructor(
             }
 
             _uiState.value = _uiState.value.copy(isTranscribing = false)
+            streamingSession = null
         }
     }
 
@@ -227,6 +290,12 @@ class NoteDetailViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        streamingSession?.cancel()
+        streamingSession = null
         audioPlayer.release()
+    }
+
+    companion object {
+        private const val TAG = "NoteDetailVM"
     }
 }

@@ -46,6 +46,15 @@
     <string name="unknown_error">未知错误</string>
     <string name="retry">重试</string>
 
+    <!-- Streaming ASR / Live Caption -->
+    <string name="live_preview">实时 · 可能变化</string>
+
+    <!-- ASR Model Download -->
+    <string name="asr_model_download_title">下载语音识别模型</string>
+    <string name="asr_model_download_desc">下载 ~180MB，一次下载永久离线使用</string>
+    <string name="asr_model_required_title">需要语音模型</string>
+    <string name="asr_model_required_desc">下载语音识别模型以开始转写。所有处理均在设备端完成。</string>
+
     <!-- Common -->
     <string name="delete">删除</string>
     <string name="cancel">取消</string>

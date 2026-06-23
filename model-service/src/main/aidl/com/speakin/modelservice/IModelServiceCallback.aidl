@@ -7,4 +7,6 @@ oneway interface IModelServiceCallback {
     void onResult(String text);
     void onError(String error);
     void onProgress(float progress);
+    /** 流式转写的中间结果 */
+    void onPartialResult(String text);
 }

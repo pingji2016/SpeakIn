@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.speakin.app.R
 import com.speakin.app.domain.llm.ModelStatus
+import com.speakin.app.domain.model.AsrModelManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +56,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val llmState by viewModel.llmState.collectAsState()
+    val asrState by viewModel.asrState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -123,27 +125,84 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Whisper ASR Model",
+                        stringResource(R.string.asr_model_download_title),
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Speech-to-text model for offline transcription",
+                        "Whisper tiny (~180MB) — offline speech-to-text, runs fully on-device",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    ModelStatusRow(
-                        label = "Status",
-                        value = if (viewModel.asrReady) "Ready" else "Not available",
-                        isReady = viewModel.asrReady
-                    )
-                    Text(
-                        "Bundled with the app via Play Asset Delivery",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+
+                    when (asrState.status) {
+                        AsrModelManager.Status.NotDownloaded -> {
+                            ModelStatusRow(label = "Status", value = "Not downloaded", isReady = false)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = { viewModel.downloadAsrModel() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.asr_model_download_desc))
+                            }
+                        }
+
+                        AsrModelManager.Status.Downloading -> {
+                            ModelStatusRow(label = "Status", value = "Downloading...", isReady = false)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            LinearProgressIndicator(
+                                progress = { asrState.progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "${(asrState.progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "Downloading in background... You can leave this screen.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        AsrModelManager.Status.Ready -> {
+                            ModelStatusRow(label = "Status", value = "Ready", isReady = true)
+                            Text(
+                                "Model loaded and ready for transcription",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        AsrModelManager.Status.Error -> {
+                            ModelStatusRow(
+                                label = "Error",
+                                value = asrState.error ?: "Unknown error",
+                                isReady = false,
+                                isError = true
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = { viewModel.downloadAsrModel() },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Retry Download")
+                            }
+                        }
+                    }
                 }
             }
 

@@ -30,14 +30,34 @@ class AudioRecorder @Inject constructor(
         private const val BUFFER_SIZE_MULTIPLIER = 2
     }
 
+    /**
+     * 音频块监听器 — 用于流式识别场景。
+     * 回调在录制线程中执行，实现方必须快速返回，避免阻塞录音。
+     */
+    interface AudioChunkListener {
+        /**
+         * 当有新音频数据可用时回调。
+         * @param chunk PCM 数据，16kHz 16-bit 单声道 ShortArray
+         */
+        fun onAudioChunk(chunk: ShortArray)
+    }
+
     private var audioRecord: AudioRecord? = null
     private var currentFile: File? = null
     private var startTime: Long = 0L
     private var _isRecording: Boolean = false
     private var recordingThread: Thread? = null
     private var totalSamplesWritten: Long = 0L
+    private var chunkListener: AudioChunkListener? = null
 
     fun isRecording(): Boolean = _isRecording
+
+    /**
+     * 设置音频块监听器（传 null 取消监听）。
+     */
+    fun setChunkListener(listener: AudioChunkListener?) {
+        this.chunkListener = listener
+    }
 
     /**
      * 开始录音。
@@ -119,6 +139,17 @@ class AudioRecorder @Inject constructor(
                     }
                     fileOutputStream.write(byteBuffer)
                     totalSamplesWritten += bytesRead.toLong()
+
+                    // 通知流式监听器（传递有效采样数据的副本）
+                    chunkListener?.let { listener ->
+                        try {
+                            val validChunk = if (bytesRead == buffer.size) buffer
+                            else buffer.copyOf(bytesRead)
+                            listener.onAudioChunk(validChunk)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Chunk listener error", e)
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -161,6 +192,7 @@ class AudioRecorder @Inject constructor(
         audioRecord = null
         recordingThread = null
         startTime = 0L
+        chunkListener = null
 
         Log.i(TAG, "Recording stopped. Duration: ${duration}ms, samples: $totalSamplesWritten")
         return duration

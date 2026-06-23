@@ -26,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.speakin.app.R
 import com.speakin.app.ui.theme.SpeakInRecording
@@ -44,6 +49,9 @@ fun RecordingBar(
     isRecording: Boolean,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
+    liveCaption: String = "",
+    liveCaptionStableLen: Int = 0,
+    isTranscribing: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -129,6 +137,88 @@ fun RecordingBar(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(stringResource(R.string.stop))
+                    }
+                }
+
+                // ─── 实时字幕显示（流式识别） ───
+                if (liveCaption.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // 流式指示小点
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (liveCaptionStableLen < liveCaption.length)
+                                                SpeakInRecording
+                                            else
+                                                MaterialTheme.colorScheme.primary
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.live_preview),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            // 稳定前缀 + 变化后缀分段显示
+                            if (liveCaptionStableLen > 0 && liveCaptionStableLen < liveCaption.length) {
+                                Text(
+                                    buildAnnotatedString {
+                                        withStyle(SpanStyle(
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )) {
+                                            append(liveCaption.substring(0, liveCaptionStableLen))
+                                        }
+                                        withStyle(SpanStyle(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium
+                                        )) {
+                                            append(liveCaption.substring(liveCaptionStableLen))
+                                        }
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                Text(
+                                    text = liveCaption,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ─── 转写中提示 ───
+                if (isTranscribing) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.transcribing),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

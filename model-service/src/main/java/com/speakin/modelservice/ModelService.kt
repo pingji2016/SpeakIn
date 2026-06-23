@@ -21,6 +21,10 @@ class ModelService : Service() {
     private var worker: HandlerThread? = null
     private var workerHandler: Handler? = null
 
+    // ─── 流式转写状态 ───
+    private var accumulatedPcm: FloatArray? = null
+    private var transcribeCancelled: Boolean = false
+
     private val binder = object : IModelService.Stub() {
 
         // ─── LLM ────────────────────────────────────────
@@ -46,6 +50,9 @@ class ModelService : Service() {
 
         override fun transcribe(audioPath: String, callback: IModelServiceCallback?) {
             val cb = callback ?: return
+            // 清除流式转写状态，避免干扰
+            accumulatedPcm = null
+            transcribeCancelled = false
 
             workerHandler?.post {
                 try {
@@ -76,6 +83,48 @@ class ModelService : Service() {
         }
 
         override fun isAsrLoaded(): Boolean = asrEngine.isLoaded
+
+        // ─── 流式 ASR ────────────────────────────────────
+
+        override fun transcribePcm(pcmData: FloatArray, callback: IModelServiceCallback?) {
+            val cb = callback ?: return
+            transcribeCancelled = false
+
+            // 累积 PCM 数据
+            accumulatedPcm = if (accumulatedPcm == null) {
+                pcmData
+            } else {
+                val prev = accumulatedPcm!!
+                FloatArray(prev.size + pcmData.size).also {
+                    System.arraycopy(prev, 0, it, 0, prev.size)
+                    System.arraycopy(pcmData, 0, it, prev.size, pcmData.size)
+                }
+            }
+
+            val currentAudio = accumulatedPcm!!
+
+            workerHandler?.post {
+                if (transcribeCancelled) return@post
+                try {
+                    cb.onProgress(0.1f)
+                    val result = asrEngine.transcribe(currentAudio) { progress ->
+                        cb.onProgress(0.1f + progress * 0.9f)
+                    }
+                    if (result != null) {
+                        cb.onPartialResult(result)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "transcribePcm error", e)
+                    cb.onError(e.message ?: "未知错误")
+                }
+            }
+        }
+
+        override fun cancelTranscribe() {
+            transcribeCancelled = true
+            accumulatedPcm = null
+            Log.i(TAG, "Streaming transcription cancelled")
+        }
 
         // ─── 生命周期 ────────────────────────────────────
 

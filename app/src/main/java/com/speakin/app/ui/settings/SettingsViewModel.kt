@@ -17,17 +17,27 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val llmState: StateFlow<ModelState> = llmModelManager.modelState
+    val asrState: StateFlow<AsrModelManager.ModelState> = asrModelManager.modelState
     val asrReady: Boolean get() = asrModelManager.isModelReady()
 
     init {
         viewModelScope.launch {
             llmModelManager.checkAndPrepare()
         }
+        viewModelScope.launch {
+            asrModelManager.ensureModelAvailable()
+        }
     }
 
     fun downloadLlmModel() {
         viewModelScope.launch {
             llmModelManager.downloadModel()
+        }
+    }
+
+    fun downloadAsrModel() {
+        viewModelScope.launch {
+            asrModelManager.downloadModel()
         }
     }
 
