@@ -32,6 +32,10 @@ android {
         versionCode = 4
         versionName = "1.0.4"
 
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -59,6 +63,8 @@ android {
             )
         }
     }
+
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -77,6 +83,7 @@ android {
     androidResources {
         noCompress += listOf("pte", "gguf")
     }
+
 }
 
 dependencies {

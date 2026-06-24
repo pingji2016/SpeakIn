@@ -1,11 +1,16 @@
 package com.speakin.app.ui.recording
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -28,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -44,6 +51,13 @@ import androidx.compose.ui.unit.dp
 import com.speakin.app.R
 import com.speakin.app.ui.theme.SpeakInRecording
 
+/**
+ * 常住底部栏：麦克风按钮 + 实时字幕
+ *
+ * - 蓝色麦克风 = 空闲（点击开始录音）
+ * - 绿色脉冲麦克风 = 正在收音（点击停止录音）
+ * - 录音乐时实时字幕显示在按钮上方
+ */
 @Composable
 fun RecordingBar(
     isRecording: Boolean,
@@ -56,7 +70,7 @@ fun RecordingBar(
 ) {
     val infiniteTransition = rememberInfiniteTransition()
     val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
+        initialValue = 0.4f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(800),
@@ -64,71 +78,147 @@ fun RecordingBar(
         )
     )
 
-    val recordingColor = SpeakInRecording.copy(alpha = pulseAlpha)
-    val containerColor by animateColorAsState(
-        targetValue = if (isRecording) SpeakInRecording.copy(alpha = 0.08f)
-                      else MaterialTheme.colorScheme.surface,
-        label = "container"
+    // 麦克风按钮颜色动画
+    val micColor by animateColorAsState(
+        targetValue = if (isRecording) Color(0xFF22C55E)  // 绿色：正在收音
+                      else Color(0xFF3B82F6),               // 蓝色：空闲
+        label = "micColor"
     )
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
-        Column(
+    val micGlow = micColor.copy(alpha = pulseAlpha * 0.3f)
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // ─── 实时字幕卡片 ───
+        // 录音中实时显示，转写中也保持最后一条字幕不消失
+        AnimatedVisibility(
+            visible = (isRecording || isTranscribing) && liveCaption.isNotEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 流式指示小点
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (liveCaptionStableLen < liveCaption.length)
+                                        SpeakInRecording
+                                    else
+                                        MaterialTheme.colorScheme.primary
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.live_preview),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // 稳定前缀 + 变化后缀分段显示
+                    if (liveCaptionStableLen > 0 && liveCaptionStableLen < liveCaption.length) {
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )) {
+                                    append(liveCaption.substring(0, liveCaptionStableLen))
+                                }
+                                withStyle(SpanStyle(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )) {
+                                    append(liveCaption.substring(liveCaptionStableLen))
+                                }
+                            },
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    } else {
+                        Text(
+                            text = liveCaption,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // ─── 底部控制栏（扁平贴边，无圆角） ───
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(MaterialTheme.colorScheme.surface)
         ) {
-            if (!isRecording) {
-                Button(
-                    onClick = onStartRecording,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = SpeakInRecording
-                    ),
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier.height(52.dp)
-                ) {
-                    Icon(
-                        Icons.Default.FiberManualRecord,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+            // 顶部分割线（替代卡片阴影）
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .align(Alignment.TopCenter)
+                    .background(
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        stringResource(R.string.start_recording),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // 脉冲红点
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (isRecording) {
+                    // 录制中：绿色脉冲麦克风 + 停止按钮
                     Box(
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
-                            .background(recordingColor)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                            .background(micGlow),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        IconButton(
+                            onClick = {}, // 点击麦克风不动作，通过停止按钮停止
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Mic,
+                                contentDescription = stringResource(R.string.recording),
+                                tint = micColor,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
                     Text(
                         stringResource(R.string.recording),
                         style = MaterialTheme.typography.titleMedium,
-                        color = SpeakInRecording
+                        color = micColor
                     )
+
                     Spacer(modifier = Modifier.weight(1f))
+
                     Button(
                         onClick = onStopRecording,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = SpeakInRecording
                         ),
-                        shape = RoundedCornerShape(28.dp),
-                        modifier = Modifier.height(44.dp)
+                        shape = RoundedCornerShape(24.dp)
                     ) {
                         Icon(
                             Icons.Default.Stop,
@@ -138,87 +228,38 @@ fun RecordingBar(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(stringResource(R.string.stop))
                     }
-                }
-
-                // ─── 实时字幕显示（流式识别） ───
-                if (liveCaption.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
+                } else if (isTranscribing) {
+                    // 转写中
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.transcribing),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // 空闲：蓝色麦克风按钮
+                    IconButton(
+                        onClick = onStartRecording,
+                        modifier = Modifier.size(56.dp)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                // 流式指示小点
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (liveCaptionStableLen < liveCaption.length)
-                                                SpeakInRecording
-                                            else
-                                                MaterialTheme.colorScheme.primary
-                                        )
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.live_preview),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            // 稳定前缀 + 变化后缀分段显示
-                            if (liveCaptionStableLen > 0 && liveCaptionStableLen < liveCaption.length) {
-                                Text(
-                                    buildAnnotatedString {
-                                        withStyle(SpanStyle(
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )) {
-                                            append(liveCaption.substring(0, liveCaptionStableLen))
-                                        }
-                                        withStyle(SpanStyle(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Medium
-                                        )) {
-                                            append(liveCaption.substring(liveCaptionStableLen))
-                                        }
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            } else {
-                                Text(
-                                    text = liveCaption,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(micColor),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Mic,
+                                contentDescription = stringResource(R.string.start_recording),
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
-                    }
-                }
-
-                // ─── 转写中提示 ───
-                if (isTranscribing) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            stringResource(R.string.transcribing),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }

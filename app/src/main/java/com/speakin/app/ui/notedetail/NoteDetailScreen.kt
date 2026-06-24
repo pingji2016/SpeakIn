@@ -79,6 +79,7 @@ import com.speakin.app.R
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.ui.recording.RecordingBar
+import com.speakin.app.ui.theme.SpeakInRecording
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -224,75 +225,71 @@ fun NoteDetailScreen(
                 )
             },
             floatingActionButton = {
-                Column(horizontalAlignment = Alignment.End) {
-                    AnimatedVisibility(
-                        visible = showAddMenu,
-                        enter = scaleIn() + fadeIn(),
-                        exit = scaleOut() + fadeOut()
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                // 录音时隐藏 FAB，通过底部常驻栏控制
+                if (!uiState.isRecording) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        AnimatedVisibility(
+                            visible = showAddMenu,
+                            enter = scaleIn() + fadeIn(),
+                            exit = scaleOut() + fadeOut()
                         ) {
-                            SmallFab(
-                                icon = Icons.Default.TextFields,
-                                label = stringResource(R.string.add_text),
-                                onClick = {
-                                    viewModel.addTextBlock()
-                                    showAddMenu = false
-                                }
-                            )
-                            SmallFab(
-                                icon = Icons.Default.Image,
-                                label = stringResource(R.string.add_image),
-                                onClick = {
-                                    imagePickerLauncher.launch("image/*")
-                                    showAddMenu = false
-                                }
-                            )
-                            SmallFab(
-                                icon = Icons.Default.Mic,
-                                label = stringResource(R.string.add_voice),
-                                onClick = {
-                                    showAddMenu = false
-                                    requestMicThenRecord()
-                                }
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                SmallFab(
+                                    icon = Icons.Default.TextFields,
+                                    label = stringResource(R.string.add_text),
+                                    onClick = {
+                                        viewModel.addTextBlock()
+                                        showAddMenu = false
+                                    }
+                                )
+                                SmallFab(
+                                    icon = Icons.Default.Image,
+                                    label = stringResource(R.string.add_image),
+                                    onClick = {
+                                        imagePickerLauncher.launch("image/*")
+                                        showAddMenu = false
+                                    }
+                                )
+                                SmallFab(
+                                    icon = Icons.Default.Mic,
+                                    label = stringResource(R.string.add_voice),
+                                    onClick = {
+                                        showAddMenu = false
+                                        requestMicThenRecord()
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        FloatingActionButton(
+                            onClick = {
+                                if (showAddMenu) showAddMenu = false
+                                else showAddMenu = true
+                            },
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(
+                                if (showAddMenu) Icons.Default.Close else Icons.Default.Add,
+                                contentDescription = stringResource(R.string.add_block),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    FloatingActionButton(
-                        onClick = {
-                            if (uiState.isRecording) {
-                                viewModel.stopRecording()
-                            } else if (showAddMenu) {
-                                showAddMenu = false
-                            } else {
-                                showAddMenu = true
-                            }
-                        },
-                        containerColor = if (uiState.isRecording)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.secondary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(
-                            if (uiState.isRecording) Icons.Default.Stop
-                            else if (showAddMenu) Icons.Default.Close
-                            else Icons.Default.Add,
-                            contentDescription = if (uiState.isRecording) stringResource(R.string.stop)
-                                else stringResource(R.string.add_block),
-                            modifier = Modifier.size(24.dp)
-                        )
                     }
                 }
             }
         ) { padding ->
-            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(bottom = 80.dp)  // 为底部常驻录音栏留空间
+            ) {
                 if (uiState.isTranscribing && uiState.blocks.isEmpty()) {
                     // Transcribing banner (only when no blocks to show)
                     Box(
@@ -314,7 +311,6 @@ fun NoteDetailScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding)
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -375,32 +371,72 @@ fun NoteDetailScreen(
             } else if (uiState.isLoading) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                        .fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
                 }
-            } else if (uiState.blocks.isEmpty() && !uiState.isRecording) {
+            } else if (uiState.blocks.isEmpty() && !uiState.isRecording && !uiState.isTranscribing) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
+                        .fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             stringResource(R.string.tap_to_record),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        // 录音中实时字幕（blocks 为空时居中显示）
+                        if (uiState.isRecording && uiState.liveCaption.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 32.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(SpeakInRecording)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = stringResource(R.string.live_preview),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = uiState.liveCaption,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding)
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -435,18 +471,16 @@ fun NoteDetailScreen(
                 }
             }
 
-            // ─── RecordingBar: 录音/转写状态底部栏 ───
-            if (uiState.isRecording || (uiState.isTranscribing && uiState.blocks.isNotEmpty())) {
-                RecordingBar(
-                    isRecording = uiState.isRecording,
-                    onStartRecording = { requestMicThenRecord() },
-                    onStopRecording = { viewModel.stopRecording() },
-                    liveCaption = uiState.liveCaption,
-                    liveCaptionStableLen = uiState.liveCaptionStableLen,
-                    isTranscribing = uiState.isTranscribing,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-            }
+            // ─── 常驻底部录音栏 ───
+            RecordingBar(
+                isRecording = uiState.isRecording,
+                onStartRecording = { requestMicThenRecord() },
+                onStopRecording = { viewModel.stopRecording() },
+                liveCaption = uiState.liveCaption,
+                liveCaptionStableLen = uiState.liveCaptionStableLen,
+                isTranscribing = uiState.isTranscribing,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
         }
     }
