@@ -47,7 +47,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.speakin.app.BuildConfig
 import com.speakin.app.R
 import com.speakin.app.domain.llm.ModelStatus
 import com.speakin.app.domain.model.AsrModelManager
@@ -112,9 +111,9 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("About", style = MaterialTheme.typography.titleMedium)
+                        Text("SpeakIn", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "SpeakIn v${BuildConfig.VERSION_NAME}",
+                            "Version & model configuration",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -1,9 +1,11 @@
 package com.speakin.app.ui.about
 
+import android.content.Context
+import android.os.Build
 import androidx.lifecycle.ViewModel
-import com.speakin.app.BuildConfig
 import com.speakin.app.data.local.ModelConfigRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,7 +14,7 @@ import javax.inject.Inject
 
 data class AboutUiState(
     val versionName: String = "",
-    val versionCode: Int = 0,
+    val versionCode: Long = 0,
     val asrUrls: String = "",
     val llmUrls: String = "",
     val hasCustomConfig: Boolean = false,
@@ -22,18 +24,32 @@ data class AboutUiState(
 
 @HiltViewModel
 class AboutViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val configRepo: ModelConfigRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AboutUiState())
     val uiState: StateFlow<AboutUiState> = _uiState.asStateFlow()
 
+    private val versionName: String
+    private val versionCode: Long
+
     init {
+        // Read version info from PackageInfo (BuildConfig not enabled in this project)
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        versionName = packageInfo.versionName ?: "unknown"
+        versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+
         val asrUrls = configRepo.getAsrBaseUrls()
         val llmUrls = configRepo.getLlmUrls()
         _uiState.value = AboutUiState(
-            versionName = BuildConfig.VERSION_NAME,
-            versionCode = BuildConfig.VERSION_CODE,
+            versionName = versionName,
+            versionCode = versionCode,
             asrUrls = asrUrls.joinToString("\n"),
             llmUrls = llmUrls.joinToString("\n"),
             hasCustomConfig = configRepo.hasCustomConfig()
@@ -72,8 +88,8 @@ class AboutViewModel @Inject constructor(
         configRepo.resetAll()
         _uiState.update {
             AboutUiState(
-                versionName = BuildConfig.VERSION_NAME,
-                versionCode = BuildConfig.VERSION_CODE,
+                versionName = versionName,
+                versionCode = versionCode,
                 asrUrls = "",
                 llmUrls = "",
                 hasCustomConfig = false,
