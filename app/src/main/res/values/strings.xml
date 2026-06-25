@@ -65,4 +65,17 @@
     <string name="asr_model_download_desc">Download ~180MB once, then use offline forever</string>
     <string name="asr_model_required_title">Speech Model Required</string>
     <string name="asr_model_required_desc">Download the speech recognition model to start transcribing. All processing is done on-device.</string>
+
+    <!-- About -->
+    <string name="about">About</string>
+    <string name="about_description">Offline voice note assistant with local AI</string>
+    <string name="about_detail">All speech recognition and text polishing runs fully on-device. No internet required after model download.</string>
+    <string name="about_asr_urls_title">Speech Recognition Model URLs</string>
+    <string name="about_asr_urls_desc">Base URLs for Whisper ASR model download. One URL per line. Leave empty to use built-in defaults.</string>
+    <string name="about_llm_urls_title">Text Polish Model URLs</string>
+    <string name="about_llm_urls_desc">Direct download URLs for Qwen3 GGUF model. One URL per line. Leave empty to use built-in defaults.</string>
+    <string name="about_save">Save</string>
+    <string name="about_saved">Saved — takes effect on next download</string>
+    <string name="about_reset_defaults">Reset to default URLs</string>
+    <string name="about_version_format">v%1$s (build %2$d)</string>
 </resources>

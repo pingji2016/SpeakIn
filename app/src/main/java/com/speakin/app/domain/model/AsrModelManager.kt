@@ -2,6 +2,7 @@ package com.speakin.app.domain.model
 
 import android.content.Context
 import android.util.Log
+import com.speakin.app.data.local.ModelConfigRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +25,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class AsrModelManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val configRepo: ModelConfigRepository
 ) {
 
     companion object {
@@ -35,13 +37,10 @@ class AsrModelManager @Inject constructor(
             "tokenizer.json"
         )
         private const val MODEL_DIR_NAME = "whisper"
-
-        // 模型下载 URL（CDN 主 URL + 备用镜像）
-        private val MODEL_DOWNLOAD_URLS = listOf(
-            "https://cdn.speakin.app/models/whisper-tiny/v1",
-            "https://hf-mirror.com/SpeakIn/whisper-tiny/resolve/main"
-        )
     }
+
+    /** 获取有效的 ASR 下载基础 URL 列表：用户自定义 > 内置默认 */
+    private fun getDownloadBaseUrls(): List<String> = configRepo.getEffectiveAsrUrls()
 
     data class ModelState(
         val status: Status = Status.NotDownloaded,
@@ -132,7 +131,7 @@ class AsrModelManager @Inject constructor(
 
                     // 尝试每个 URL 镜像
                     var downloadSuccess = false
-                    for (baseUrl in MODEL_DOWNLOAD_URLS) {
+                    for (baseUrl in getDownloadBaseUrls()) {
                         try {
                             val url = "$baseUrl/$filename"
                             Log.i(TAG, "Downloading $url → ${dest.absolutePath}")

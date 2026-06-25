@@ -1,6 +1,7 @@
 package com.speakin.app.domain.llm
 
 import android.content.Context
+import com.speakin.app.data.local.ModelConfigRepository
 import com.speakin.app.domain.service.ModelServiceFacade
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -33,20 +34,20 @@ enum class ModelStatus {
 @Singleton
 class ModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val modelService: ModelServiceFacade
+    private val modelService: ModelServiceFacade,
+    private val configRepo: ModelConfigRepository
 ) {
 
     companion object {
         private const val MODEL_FILENAME = "qwen3-0.6b-q4_k_m.gguf"
         private const val ASSET_MODEL_PATH = "models/$MODEL_FILENAME"
-        private val MODEL_URLS = listOf(
-            "https://hf-mirror.com/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
-            "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
-        )
     }
 
     private val _modelState = MutableStateFlow(ModelState())
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
+
+    /** 获取有效的 LLM 下载 URL 列表：用户自定义 > 内置默认 */
+    private fun getModelUrls(): List<String> = configRepo.getEffectiveLlmUrls()
 
     fun getModelFile(): File {
         return File(context.filesDir, "models/$MODEL_FILENAME")
@@ -112,7 +113,7 @@ class ModelManager @Inject constructor(
             withContext(Dispatchers.IO) {
                 var lastError: String? = null
 
-                for (urlStr in MODEL_URLS) {
+                for (urlStr in getModelUrls()) {
                     try {
                         val url = URL(urlStr)
                         val connection = url.openConnection() as HttpURLConnection
