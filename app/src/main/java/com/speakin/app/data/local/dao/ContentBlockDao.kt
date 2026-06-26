@@ -15,6 +15,9 @@ interface ContentBlockDao {
     @Query("SELECT * FROM content_blocks WHERE noteId = :noteId ORDER BY sortOrder ASC")
     fun getBlocksByNoteId(noteId: String): Flow<List<ContentBlockEntity>>
 
+    @Query("SELECT * FROM content_blocks WHERE noteId = :noteId ORDER BY sortOrder ASC")
+    suspend fun getBlocksByNoteIdOnce(noteId: String): List<ContentBlockEntity>
+
     @Query("SELECT * FROM content_blocks WHERE id = :blockId")
     suspend fun getBlockById(blockId: String): ContentBlockEntity?
 

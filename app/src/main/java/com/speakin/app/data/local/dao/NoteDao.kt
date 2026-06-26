@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface NoteDao {
 
-    @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes ORDER BY isPinned DESC, updatedAt DESC")
     fun getAllNotes(): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE id = :noteId")
@@ -33,6 +33,20 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE id = :noteId")
     suspend fun deleteNoteById(noteId: String)
 
+    @Query("UPDATE notes SET isPinned = :isPinned WHERE id = :noteId")
+    suspend fun setNotePinned(noteId: String, isPinned: Boolean)
+
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun getNoteCount(): Int
+
+    @Query("""
+        SELECT DISTINCT n.* FROM notes n
+        LEFT JOIN content_blocks cb ON n.id = cb.noteId
+        WHERE n.title LIKE '%' || :query || '%'
+           OR cb.textContent LIKE '%' || :query || '%'
+           OR cb.transcription LIKE '%' || :query || '%'
+           OR cb.polishedText LIKE '%' || :query || '%'
+        ORDER BY n.isPinned DESC, n.updatedAt DESC
+    """)
+    fun searchNotes(query: String): Flow<List<NoteEntity>>
 }

@@ -9,5 +9,6 @@ data class NoteEntity(
     val title: String,
     val createdAt: Long,
     val updatedAt: Long,
-    val blockCount: Int = 0
+    val blockCount: Int = 0,
+    val isPinned: Boolean = false
 )

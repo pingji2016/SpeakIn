@@ -72,10 +72,39 @@
     <string name="delete">删除</string>
     <string name="cancel">取消</string>
     <string name="rename_note_title">重命名笔记</string>
+    <string name="rename_note">重命名</string>
     <string name="rename">重命名</string>
+    <string name="pin_note">置顶</string>
+    <string name="unpin_note">取消置顶</string>
+    <string name="pinned">已置顶</string>
+    <string name="note_details">详情</string>
+    <string name="export_note">导出</string>
     <string name="delete_note">删除笔记</string>
     <string name="delete_note_title">删除笔记</string>
     <string name="delete_note_message">确定要删除这条笔记吗？此操作不可撤销。</string>
+
+    <!-- Search -->
+    <string name="search_hint">搜索笔记…</string>
+    <string name="search_no_results">无匹配笔记</string>
+
+    <!-- Note Details -->
+    <string name="note_details_title">笔记详情</string>
+    <string name="title_label">标题</string>
+    <string name="created_time">创建时间</string>
+    <string name="modified_time">修改时间</string>
+    <string name="content_size">内容</string>
+    <string name="total_text">总文字量</string>
+    <string name="total_audio_duration">录音时长</string>
+    <string name="text_blocks_count">文字块</string>
+    <string name="voice_blocks_count">语音块</string>
+    <string name="image_blocks_count">图片块</string>
+    <string name="blocks_summary">%d 个内容块</string>
+    <string name="characters_count">%d 字</string>
+    <string name="close_label">关闭</string>
+
+    <!-- View -->
+    <string name="grid_view">网格视图</string>
+    <string name="list_view">列表视图</string>
     <string name="delete_block_title">删除内容块</string>
     <string name="delete_block_message">确定要删除此内容块吗？</string>
 </resources>

@@ -2,6 +2,7 @@ package com.speakin.app.data.repository
 
 import com.speakin.app.data.local.dao.ContentBlockDao
 import com.speakin.app.data.local.dao.NoteDao
+import com.speakin.app.data.local.dto.NoteStats
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
@@ -134,6 +135,67 @@ class NoteRepository @Inject constructor(
     suspend fun updateNoteTitle(noteId: String, title: String) {
         val note = noteDao.getNoteById(noteId) ?: return
         noteDao.updateNote(note.copy(title = title, updatedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun togglePinNote(noteId: String) {
+        val note = noteDao.getNoteById(noteId) ?: return
+        noteDao.setNotePinned(noteId, !note.isPinned)
+    }
+
+    suspend fun exportNoteAsText(noteId: String): String? {
+        val note = noteDao.getNoteById(noteId) ?: return null
+        val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+        return buildString {
+            appendLine(note.title)
+            appendLine("─".repeat(40))
+            blocks.forEach { block ->
+                appendLine()
+                when (block.blockType) {
+                    BlockType.TEXT -> {
+                        if (block.textContent.isNotBlank()) {
+                            appendLine(block.textContent)
+                        }
+                    }
+                    BlockType.VOICE -> {
+                        val text = block.polishedText?.takeIf { it.isNotBlank() }
+                            ?: block.transcription?.takeIf { it.isNotBlank() }
+                            ?: block.textContent
+                        if (text.isNotBlank()) {
+                            appendLine(text)
+                        }
+                    }
+                    BlockType.IMAGE -> {
+                        if (block.textContent.isNotBlank()) {
+                            appendLine("[Image: ${block.textContent}]")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.searchNotes(query)
+
+    suspend fun getNoteStats(noteId: String): NoteStats? {
+        val note = noteDao.getNoteById(noteId) ?: return null
+        val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+        return NoteStats(
+            noteId = note.id,
+            title = note.title,
+            createdAt = note.createdAt,
+            updatedAt = note.updatedAt,
+            blockCount = blocks.size,
+            textBlockCount = blocks.count { it.blockType == BlockType.TEXT },
+            voiceBlockCount = blocks.count { it.blockType == BlockType.VOICE },
+            imageBlockCount = blocks.count { it.blockType == BlockType.IMAGE },
+            totalAudioDurationMs = blocks.filter { it.blockType == BlockType.VOICE }
+                .sumOf { it.durationMs ?: 0L },
+            totalTextLength = blocks.sumOf { block ->
+                (block.textContent?.length ?: 0) +
+                    (block.transcription?.length ?: 0) +
+                    (block.polishedText?.length ?: 0)
+            }
+        )
     }
 
     private suspend fun updateBlockCount(noteId: String) {

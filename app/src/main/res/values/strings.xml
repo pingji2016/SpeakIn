@@ -50,10 +50,39 @@
     <string name="delete">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="rename_note_title">Rename Note</string>
+    <string name="rename_note">Rename</string>
     <string name="rename">Rename</string>
+    <string name="pin_note">Pin to top</string>
+    <string name="unpin_note">Unpin</string>
+    <string name="pinned">Pinned</string>
+    <string name="note_details">Details</string>
+    <string name="export_note">Export</string>
     <string name="delete_note">Delete note</string>
     <string name="delete_note_title">Delete Note</string>
     <string name="delete_note_message">Are you sure you want to delete this note? This cannot be undone.</string>
+
+    <!-- Search -->
+    <string name="search_hint">Search notes…</string>
+    <string name="search_no_results">No matching notes</string>
+
+    <!-- Note Details -->
+    <string name="note_details_title">Note Details</string>
+    <string name="title_label">Title</string>
+    <string name="created_time">Created</string>
+    <string name="modified_time">Modified</string>
+    <string name="content_size">Content</string>
+    <string name="total_text">Total text</string>
+    <string name="total_audio_duration">Audio duration</string>
+    <string name="text_blocks_count">Text blocks</string>
+    <string name="voice_blocks_count">Voice blocks</string>
+    <string name="image_blocks_count">Image blocks</string>
+    <string name="blocks_summary">%d blocks</string>
+    <string name="characters_count">%d chars</string>
+    <string name="close_label">Close</string>
+
+    <!-- View -->
+    <string name="grid_view">Grid view</string>
+    <string name="list_view">List view</string>
     <string name="delete_block_title">Delete Block</string>
     <string name="delete_block_message">Delete this content block?</string>
 
