@@ -362,7 +362,8 @@ fun NoteDetailScreen(
                             BlockType.IMAGE -> ImageBlockView(
                                 block = block,
                                 onImageClick = { fullscreenImagePath = block.imageFilePath },
-                                onDelete = { viewModel.deleteBlock(block.id) }
+                                onDelete = { viewModel.deleteBlock(block.id) },
+                                onCaptionChanged = { viewModel.updateTextBlock(block.id, it) }
                             )
                         }
                     }
@@ -463,7 +464,8 @@ fun NoteDetailScreen(
                             BlockType.IMAGE -> ImageBlockView(
                                 block = block,
                                 onImageClick = { fullscreenImagePath = block.imageFilePath },
-                                onDelete = { viewModel.deleteBlock(block.id) }
+                                onDelete = { viewModel.deleteBlock(block.id) },
+                                onCaptionChanged = { viewModel.updateTextBlock(block.id, it) }
                             )
                         }
                     }
@@ -644,8 +646,12 @@ private fun TextBlockView(
 private fun ImageBlockView(
     block: ContentBlockEntity,
     onImageClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCaptionChanged: (String) -> Unit
 ) {
+    var editingCaption by remember { mutableStateOf(false) }
+    var captionText by remember(block.id) { mutableStateOf(block.textContent) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -697,14 +703,56 @@ private fun ImageBlockView(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = block.textContent.ifEmpty { stringResource(R.string.image_caption) },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (block.textContent.isEmpty())
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
+                if (editingCaption) {
+                    TextField(
+                        value = captionText,
+                        onValueChange = { captionText = it },
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.image_caption),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        },
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedIndicatorColor = MaterialTheme.colorScheme.secondary,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    // Done button to confirm caption
+                    Text(
+                        text = stringResource(R.string.done),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier
+                            .clickable {
+                                editingCaption = false
+                                if (captionText != block.textContent) {
+                                    onCaptionChanged(captionText)
+                                }
+                            }
+                            .padding(horizontal = 8.dp)
+                    )
+                } else {
+                    Text(
+                        text = block.textContent.ifEmpty { stringResource(R.string.image_caption) },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (block.textContent.isEmpty())
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                captionText = block.textContent
+                                editingCaption = true
+                            }
+                    )
+                }
                 IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.DeleteOutline,

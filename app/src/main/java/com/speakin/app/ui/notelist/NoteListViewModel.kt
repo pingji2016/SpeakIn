@@ -21,7 +21,9 @@ data class NoteListUiState(
     val isLoading: Boolean = true,
     val searchQuery: String = "",
     val isSearchActive: Boolean = false,
-    val isGridView: Boolean = false
+    val isGridView: Boolean = false,
+    val isSelectionMode: Boolean = false,
+    val selectedNoteIds: Set<String> = emptySet()
 )
 
 sealed class NoteListEvent {
@@ -97,6 +99,44 @@ class NoteListViewModel @Inject constructor(
     fun deleteNote(noteId: String) {
         viewModelScope.launch {
             repository.deleteNote(noteId)
+        }
+    }
+
+    // ─── Batch Selection ──────────────────────────────────
+
+    fun enterSelectionMode(noteId: String) {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = true,
+            selectedNoteIds = setOf(noteId)
+        )
+    }
+
+    fun toggleSelection(noteId: String) {
+        val current = _uiState.value.selectedNoteIds
+        _uiState.value = _uiState.value.copy(
+            selectedNoteIds = if (noteId in current) current - noteId else current + noteId,
+            isSelectionMode = if (current.size == 1 && noteId in current) false else true
+        )
+    }
+
+    fun exitSelectionMode() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = false,
+            selectedNoteIds = emptySet()
+        )
+    }
+
+    fun selectAll() {
+        _uiState.value = _uiState.value.copy(
+            selectedNoteIds = _uiState.value.notes.map { it.id }.toSet()
+        )
+    }
+
+    fun deleteSelectedNotes() {
+        viewModelScope.launch {
+            val ids = _uiState.value.selectedNoteIds.toList()
+            repository.deleteNotes(ids)
+            exitSelectionMode()
         }
     }
 

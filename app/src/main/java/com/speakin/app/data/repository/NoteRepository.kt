@@ -127,9 +127,23 @@ class NoteRepository @Inject constructor(
 
     suspend fun deleteNote(noteId: String) {
         // Clean up all block files
-        val blocks = contentBlockDao.getBlocksByNoteId(noteId)
-        // Note: Flow can't be collected here, use noteId for cascade delete at DB level
+        val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+        blocks.forEach { block ->
+            block.audioFilePath?.let { File(it).delete() }
+            block.imageFilePath?.let { File(it).delete() }
+        }
         noteDao.deleteNoteById(noteId)
+    }
+
+    suspend fun deleteNotes(noteIds: List<String>) {
+        noteIds.forEach { noteId ->
+            val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+            blocks.forEach { block ->
+                block.audioFilePath?.let { File(it).delete() }
+                block.imageFilePath?.let { File(it).delete() }
+            }
+        }
+        noteDao.deleteNotesByIds(noteIds)
     }
 
     suspend fun updateNoteTitle(noteId: String, title: String) {

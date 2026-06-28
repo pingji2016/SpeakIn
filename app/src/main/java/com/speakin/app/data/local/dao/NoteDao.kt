@@ -33,6 +33,9 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE id = :noteId")
     suspend fun deleteNoteById(noteId: String)
 
+    @Query("DELETE FROM notes WHERE id IN (:noteIds)")
+    suspend fun deleteNotesByIds(noteIds: List<String>)
+
     @Query("UPDATE notes SET isPinned = :isPinned WHERE id = :noteId")
     suspend fun setNotePinned(noteId: String, isPinned: Boolean)
 
