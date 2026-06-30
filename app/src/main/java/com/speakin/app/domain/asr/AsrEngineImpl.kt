@@ -192,9 +192,26 @@ class AsrEngineImpl @Inject constructor(
 
             sessionScope.launch {
                 try {
-                    val audioData = audioBuffer.toFloatArray()
-
-                    val result = modelService.transcribeAudioData(audioData)
+                    val result: Result<String> = if (isFinal) {
+                        // Final: save entire buffer to temp WAV file, transcribe via file path
+                        // to avoid TransactionTooLargeException (PCM FloatArray > 1MB Binder limit)
+                        val tempFile = java.io.File(
+                            asrModelManager.getModelDir().parentFile,
+                            "stream_final_${System.currentTimeMillis()}.wav"
+                        )
+                        try {
+                            writeFloatArrayAsWav(audioBuffer.toFloatArrayFull(), tempFile)
+                            modelService.transcribe(tempFile)
+                        } finally {
+                            tempFile.delete()
+                        }
+                    } else {
+                        // Partial: only send last ~5 seconds (80000 samples * 4 bytes = 320KB)
+                        // which stays well under the 1MB Binder transaction limit
+                        val tailSamples = 80000  // 5 seconds @ 16kHz
+                        val audioData = audioBuffer.toFloatArrayTail(tailSamples)
+                        modelService.transcribeAudioData(audioData)
+                    }
 
                     result.fold(
                         onSuccess = { text ->
@@ -231,6 +248,56 @@ class AsrEngineImpl @Inject constructor(
                     }
                 }
             }
+        }
+
+        /**
+         * Write a float PCM array as a WAV file (for temp file transcription).
+         */
+        private fun writeFloatArrayAsWav(data: FloatArray, wavFile: java.io.File) {
+            val sampleRate = 16000
+            val bitsPerSample = 16
+            val numChannels = 1
+            val byteRate = sampleRate * numChannels * bitsPerSample / 8
+            val blockAlign = numChannels * bitsPerSample / 8
+            val dataSize = data.size * 2
+            val fileSize = 36 + dataSize
+
+            java.io.FileOutputStream(wavFile).use { out ->
+                out.write("RIFF".toByteArray())
+                out.write(intToByteArrayLE(fileSize))
+                out.write("WAVE".toByteArray())
+                out.write("fmt ".toByteArray())
+                out.write(intToByteArrayLE(16))
+                out.write(shortToByteArrayLE(1))
+                out.write(shortToByteArrayLE(numChannels.toShort()))
+                out.write(intToByteArrayLE(sampleRate))
+                out.write(intToByteArrayLE(byteRate))
+                out.write(shortToByteArrayLE(blockAlign.toShort()))
+                out.write(shortToByteArrayLE(bitsPerSample.toShort()))
+                out.write("data".toByteArray())
+                out.write(intToByteArrayLE(dataSize))
+                for (sample in data) {
+                    val pcm = (sample * 32767f).toInt().coerceIn(-32768, 32767)
+                    out.write(pcm and 0xFF)
+                    out.write((pcm shr 8) and 0xFF)
+                }
+            }
+        }
+
+        private fun intToByteArrayLE(value: Int): ByteArray {
+            return byteArrayOf(
+                (value and 0xFF).toByte(),
+                ((value shr 8) and 0xFF).toByte(),
+                ((value shr 16) and 0xFF).toByte(),
+                ((value shr 24) and 0xFF).toByte()
+            )
+        }
+
+        private fun shortToByteArrayLE(value: Short): ByteArray {
+            return byteArrayOf(
+                (value.toInt() and 0xFF).toByte(),
+                ((value.toInt() shr 8) and 0xFF).toByte()
+            )
         }
     }
 

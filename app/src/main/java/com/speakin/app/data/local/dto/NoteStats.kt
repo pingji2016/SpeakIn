@@ -6,9 +6,10 @@ data class NoteStats(
     val createdAt: Long,
     val updatedAt: Long,
     val blockCount: Int,
-    val textBlockCount: Int,
-    val voiceBlockCount: Int,
-    val imageBlockCount: Int,
-    val totalAudioDurationMs: Long,
-    val totalTextLength: Int
+    val textBlockCount: Int = 0,
+    val voiceBlockCount: Int = 0,
+    val imageBlockCount: Int = 0,
+    val totalAudioDurationMs: Long = 0L,
+    val totalTextLength: Int = 0,
+    val usesRichContent: Boolean = false  // true = v4+ rich format
 )

@@ -24,7 +24,7 @@ object DatabaseModule {
             SpeakInDatabase::class.java,
             "speakin_database"
         )
-            .addMigrations(SpeakInDatabase.MIGRATION_2_3)
+            .addMigrations(SpeakInDatabase.MIGRATION_2_3, SpeakInDatabase.MIGRATION_3_4)
             .fallbackToDestructiveMigration()
             .build()
     }

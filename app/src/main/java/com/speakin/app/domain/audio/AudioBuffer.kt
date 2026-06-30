@@ -101,6 +101,49 @@ class AudioBuffer(private val maxSamples: Int = 480000) { // 默认 30s @ 16kHz
     }
 
     /**
+     * 获取最近 N 个采样的尾部片段（不修改内部状态）。
+     * 用于流式识别的部分结果，限制 AIDL 传输大小。
+     */
+    fun toFloatArrayTail(sampleCount: Int): FloatArray {
+        val count = sampleCount.coerceAtMost(totalSamples)
+        synchronized(lock) {
+            val result = FloatArray(count)
+            var remaining = count
+            var resultOffset = 0
+            // 从最旧的 chunk 开始跳过，然后复制最后 remaining 个采样
+            var skipSamples = totalSamples - count
+            for (chunk in chunks) {
+                if (skipSamples > 0) {
+                    if (skipSamples >= chunk.size) {
+                        skipSamples -= chunk.size
+                        continue
+                    } else {
+                        val copySize = chunk.size - skipSamples
+                        System.arraycopy(chunk, skipSamples, result, resultOffset, copySize)
+                        resultOffset += copySize
+                        remaining -= copySize
+                        skipSamples = 0
+                        continue
+                    }
+                }
+                val copySize = minOf(chunk.size, remaining)
+                System.arraycopy(chunk, 0, result, resultOffset, copySize)
+                resultOffset += copySize
+                remaining -= copySize
+                if (remaining <= 0) break
+            }
+            return result
+        }
+    }
+
+    /**
+     * 获取全部累积数据的副本。
+     */
+    fun toFloatArrayFull(): FloatArray {
+        return toFloatArray(totalSamples)
+    }
+
+    /**
      * 重置缓冲区（新录音会话开始时调用）。
      */
     fun reset() {

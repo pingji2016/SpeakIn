@@ -6,7 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -22,19 +22,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -67,17 +70,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.core.content.ContextCompat
 import com.speakin.app.R
-import com.speakin.app.data.local.entity.BlockType
-import com.speakin.app.data.local.entity.ContentBlockEntity
+import com.speakin.app.data.local.entity.RichSegment
+import com.speakin.app.data.local.entity.SpanInfo
+import com.speakin.app.data.local.entity.SpanType
 import com.speakin.app.ui.recording.RecordingBar
 import com.speakin.app.ui.theme.SpeakInRecording
 import java.io.File
@@ -103,11 +109,10 @@ fun NoteDetailScreen(
             context.contentResolver.openInputStream(it)?.use { input ->
                 tempFile.outputStream().use { output -> input.copyTo(output) }
             }
-            viewModel.addImageBlock(tempFile)
+            viewModel.addImage(tempFile)
         }
     }
 
-    // Microphone permission
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -211,7 +216,7 @@ fun NoteDetailScreen(
                             Icon(
                                 if (editingTitle) Icons.Default.Stop else Icons.Default.Edit,
                                 contentDescription = if (editingTitle) stringResource(R.string.save)
-                                    else stringResource(R.string.edit_title),
+                                else stringResource(R.string.edit_title),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -225,255 +230,116 @@ fun NoteDetailScreen(
                 )
             },
             floatingActionButton = {
-                // 录音时隐藏 FAB，通过底部常驻栏控制
                 if (!uiState.isRecording) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        AnimatedVisibility(
-                            visible = showAddMenu,
-                            enter = scaleIn() + fadeIn(),
-                            exit = scaleOut() + fadeOut()
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                SmallFab(
-                                    icon = Icons.Default.TextFields,
-                                    label = stringResource(R.string.add_text),
-                                    onClick = {
-                                        viewModel.addTextBlock()
-                                        showAddMenu = false
-                                    }
-                                )
-                                SmallFab(
-                                    icon = Icons.Default.Image,
-                                    label = stringResource(R.string.add_image),
-                                    onClick = {
-                                        imagePickerLauncher.launch("image/*")
-                                        showAddMenu = false
-                                    }
-                                )
-                                SmallFab(
-                                    icon = Icons.Default.Mic,
-                                    label = stringResource(R.string.add_voice),
-                                    onClick = {
-                                        showAddMenu = false
-                                        requestMicThenRecord()
-                                    }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        FloatingActionButton(
-                            onClick = {
-                                if (showAddMenu) showAddMenu = false
-                                else showAddMenu = true
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        FanArcMenu(
+                            expanded = showAddMenu,
+                            onToggle = { showAddMenu = !showAddMenu },
+                            onAddText = {
+                                val updated = uiState.segments.toMutableList()
+                                updated.add(RichSegment.Text(""))
+                                viewModel.onSegmentsChanged(updated)
+                                showAddMenu = false
                             },
-                            containerColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Icon(
-                                if (showAddMenu) Icons.Default.Close else Icons.Default.Add,
-                                contentDescription = stringResource(R.string.add_block),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                            onAddImage = {
+                                imagePickerLauncher.launch("image/*")
+                                showAddMenu = false
+                            },
+                            onAddVoice = {
+                                showAddMenu = false
+                                requestMicThenRecord()
+                            }
+                        )
                     }
                 }
             }
         ) { padding ->
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(bottom = 80.dp)  // 为底部常驻录音栏留空间
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(bottom = 80.dp)
             ) {
-                if (uiState.isTranscribing && uiState.blocks.isEmpty()) {
-                    // Transcribing banner (only when no blocks to show)
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                stringResource(R.string.transcribing),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else if (uiState.transcribeError != null) {
-                // Show error + blocks list
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            ),
-                            shape = RoundedCornerShape(8.dp)
+                when {
+                    // Loading
+                    uiState.isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+
+                    // Transcribing with no segments yet
+                    uiState.isTranscribing && uiState.segments.isEmpty() -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "⚠",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = uiState.transcribeError ?: "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                    stringResource(R.string.transcribing),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                     }
-                    item { Spacer(modifier = Modifier.height(4.dp)) }
-                    items(uiState.blocks, key = { it.id }) { block ->
-                        when (block.blockType) {
-                            BlockType.VOICE -> VoiceBlockView(
-                                block = block,
-                                isPlaying = block.id == uiState.playingBlockId,
-                                onPlayPause = {
-                                    if (uiState.playingBlockId == block.id) {
-                                        viewModel.onPlaybackStopped()
-                                    } else {
-                                        viewModel.onPlaybackStarted(block.id)
-                                    }
-                                },
-                                onDelete = { viewModel.deleteBlock(block.id) }
-                            )
-                            BlockType.TEXT -> TextBlockView(
-                                block = block,
-                                onTextChanged = { viewModel.updateTextBlock(block.id, it) },
-                                onDelete = { viewModel.deleteBlock(block.id) }
-                            )
-                            BlockType.IMAGE -> ImageBlockView(
-                                block = block,
-                                onImageClick = { fullscreenImagePath = block.imageFilePath },
-                                onDelete = { viewModel.deleteBlock(block.id) },
-                                onCaptionChanged = { viewModel.updateTextBlock(block.id, it) }
-                            )
-                        }
-                    }
-                    item { Spacer(modifier = Modifier.height(120.dp)) }
-                }
-            } else if (uiState.isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (uiState.blocks.isEmpty() && !uiState.isRecording && !uiState.isTranscribing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Mic,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            stringResource(R.string.tap_to_record),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        // 录音中实时字幕（blocks 为空时居中显示）
-                        if (uiState.isRecording && uiState.liveCaption.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 32.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+
+                    // Empty state (no segments, not recording)
+                    uiState.segments.isEmpty() && !uiState.isRecording && !uiState.isTranscribing -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(64.dp)
                                 )
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(SpeakInRecording)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = stringResource(R.string.live_preview),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = uiState.liveCaption,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    stringResource(R.string.tap_to_record),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item { Spacer(modifier = Modifier.height(4.dp)) }
-                    items(uiState.blocks, key = { it.id }) { block ->
-                        when (block.blockType) {
-                            BlockType.VOICE -> VoiceBlockView(
-                                block = block,
-                                isPlaying = block.id == uiState.playingBlockId,
-                                onPlayPause = {
-                                    if (uiState.playingBlockId == block.id) {
-                                        viewModel.onPlaybackStopped()
-                                    } else {
-                                        viewModel.onPlaybackStarted(block.id)
-                                    }
-                                },
-                                onDelete = { viewModel.deleteBlock(block.id) }
-                            )
-                            BlockType.TEXT -> TextBlockView(
-                                block = block,
-                                onTextChanged = { viewModel.updateTextBlock(block.id, it) },
-                                onDelete = { viewModel.deleteBlock(block.id) }
-                            )
-                            BlockType.IMAGE -> ImageBlockView(
-                                block = block,
-                                onImageClick = { fullscreenImagePath = block.imageFilePath },
-                                onDelete = { viewModel.deleteBlock(block.id) },
-                                onCaptionChanged = { viewModel.updateTextBlock(block.id, it) }
-                            )
+
+                    // Rich content editor — always shows at least one editable text area
+                    else -> {
+                        val displaySegments = if (uiState.segments.isEmpty()) {
+                            listOf(RichSegment.Text(""))
+                        } else {
+                            uiState.segments
                         }
+                        RichContentArea(
+                            segments = displaySegments,
+                            isInitialEmpty = uiState.segments.isEmpty(),
+                            playingAudioPath = uiState.playingAudioPath,
+                            transcribeError = uiState.transcribeError,
+                            onSegmentsChanged = { viewModel.onSegmentsChanged(it) },
+                            onImageClick = { fullscreenImagePath = it },
+                            onAudioPlayPause = { path, play ->
+                                if (play) viewModel.onPlaybackStarted(path)
+                                else viewModel.onPlaybackStopped()
+                            },
+                            onDeleteSegment = { viewModel.deleteSegment(it) }
+                        )
                     }
-                    item { Spacer(modifier = Modifier.height(120.dp)) }
                 }
             }
 
-            // ─── 常驻底部录音栏 ───
+            // ─── Recording bar ───
             RecordingBar(
                 isRecording = uiState.isRecording,
                 onStartRecording = { requestMicThenRecord() },
@@ -484,89 +350,333 @@ fun NoteDetailScreen(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Rich Content Area — inline segments flowing vertically
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun RichContentArea(
+    segments: List<RichSegment>,
+    isInitialEmpty: Boolean = false,
+    playingAudioPath: String?,
+    transcribeError: String?,
+    onSegmentsChanged: (List<RichSegment>) -> Unit,
+    onImageClick: (String) -> Unit,
+    onAudioPlayPause: (String, Boolean) -> Unit,
+    onDeleteSegment: (Int) -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Error banner
+        if (transcribeError != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "⚠",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = transcribeError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+
+        // Render each segment inline
+        segments.forEachIndexed { index, segment ->
+            when (segment) {
+                is RichSegment.Text -> EditableTextSegment(
+                    text = segment.text,
+                    spans = segment.spans,
+                    onTextChanged = { newText ->
+                        if (isInitialEmpty) {
+                            // First keystroke: persist the new segment
+                            onSegmentsChanged(listOf(RichSegment.Text(newText)))
+                        } else {
+                            val updated = segments.toMutableList()
+                            updated[index] = RichSegment.Text(newText, segment.spans)
+                            onSegmentsChanged(updated)
+                        }
+                    },
+                    onDelete = {
+                        if (!isInitialEmpty) onDeleteSegment(index)
+                    },
+                    showDelete = !isInitialEmpty || segments.size > 1
+                )
+                is RichSegment.Image -> ImageSegmentView(
+                    imagePath = segment.imagePath,
+                    altText = segment.altText,
+                    onImageClick = { onImageClick(segment.imagePath) },
+                    onDelete = { onDeleteSegment(index) }
+                )
+                is RichSegment.Audio -> AudioSegmentView(
+                    audioPath = segment.audioPath,
+                    durationMs = segment.durationMs,
+                    transcription = segment.transcription,
+                    polishedText = segment.polishedText,
+                    isPlaying = playingAudioPath == segment.audioPath,
+                    onPlayPause = { play ->
+                        onAudioPlayPause(segment.audioPath, play)
+                    },
+                    onDelete = { onDeleteSegment(index) }
+                )
+            }
+        }
+
+        // Bottom spacer so content doesn't hide behind recording bar
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Editable Text Segment
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun EditableTextSegment(
+    text: String,
+    spans: List<SpanInfo>,
+    onTextChanged: (String) -> Unit,
+    onDelete: () -> Unit,
+    showDelete: Boolean = true
+) {
+    var textFieldValue by remember(text) {
+        mutableStateOf(
+            TextFieldValue(
+                annotatedString = buildAnnotatedForDisplay(text, spans),
+                selection = TextRange(text.length)
+            )
+        )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        BasicTextField(
+            value = textFieldValue,
+            onValueChange = { newValue ->
+                textFieldValue = newValue
+                onTextChanged(newValue.text)
+            },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                MaterialTheme.colorScheme.primary
+            ),
+            modifier = Modifier.weight(1f),
+            minLines = 1
+        )
+        if (showDelete) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.DeleteOutline,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Voice Block
+// Image Segment View
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun VoiceBlockView(
-    block: ContentBlockEntity,
-    isPlaying: Boolean,
-    onPlayPause: () -> Unit,
+private fun ImageSegmentView(
+    imagePath: String,
+    altText: String,
+    onImageClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 180.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onImageClick)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(File(imagePath))
+                .crossfade(true)
+                .size(600)
+                .build(),
+            contentDescription = altText.ifEmpty { "Image" },
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // Delete button
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove image",
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        // Alt text overlay
+        if (altText.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(4.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
-                IconButton(
-                    onClick = onPlayPause,
-                    modifier = Modifier.size(40.dp).clip(CircleShape)
-                ) {
-                    Icon(
-                        if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) stringResource(R.string.pause)
-                            else stringResource(R.string.play),
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
                 Text(
-                    text = formatDuration(block.durationMs ?: 0L),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = altText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White
                 )
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.delete_segment),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Audio Segment View
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun AudioSegmentView(
+    audioPath: String,
+    durationMs: Long,
+    transcription: String?,
+    polishedText: String?,
+    isPlaying: Boolean,
+    onPlayPause: (Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val label = polishedText?.takeIf { it.isNotBlank() }
+        ?: transcription?.takeIf { it.isNotBlank() }
+        ?: "Audio (${formatDuration(durationMs)})"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(
+                onClick = { onPlayPause(!isPlaying) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Stop" else "Play",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
-            if (!block.transcription.isNullOrEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .padding(12.dp)
-                ) {
+            Icon(
+                Icons.Default.GraphicEq,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
+                modifier = Modifier.size(16.dp)
+            )
+
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+
+            Text(
+                text = formatDuration(durationMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Default.DeleteOutline,
+                    contentDescription = "Remove audio",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        // Expandable transcription details
+        if (expanded && (transcription != null || polishedText != null)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 10.dp)
+            ) {
+                if (!transcription.isNullOrEmpty()) {
                     Text(
-                        text = block.transcription,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = transcription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-
-            if (!block.polishedText.isNullOrEmpty() && block.polishedText != block.transcription) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
-                        .padding(12.dp)
-                ) {
+                if (!polishedText.isNullOrEmpty() && polishedText != transcription) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = block.polishedText,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = polishedText,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
@@ -576,231 +686,100 @@ private fun VoiceBlockView(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Text Block (multi-line)
+// Helpers
+// ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// Fan Arc Menu — fan-shaped radial menu for insert actions
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun TextBlockView(
-    block: ContentBlockEntity,
-    onTextChanged: (String) -> Unit,
-    onDelete: () -> Unit
+private fun FanArcMenu(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onAddText: () -> Unit,
+    onAddImage: () -> Unit,
+    onAddVoice: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Icon(
-                    Icons.Default.TextFields,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.delete),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            TextField(
-                value = block.textContent,
-                onValueChange = onTextChanged,
-                placeholder = {
-                    Text(
-                        stringResource(R.string.text_placeholder),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                minLines = 3
-            )
-        }
-    }
-}
+    val radiusDp = 120.dp
 
-// ═══════════════════════════════════════════════════════════════
-// Image Block (thumbnail + tap to fullscreen)
-// ═══════════════════════════════════════════════════════════════
+    data class ArcItem(
+        val icon: androidx.compose.ui.graphics.vector.ImageVector,
+        val label: String,
+        val onClick: () -> Unit,
+        val angleDeg: Double
+    )
 
-@Composable
-private fun ImageBlockView(
-    block: ContentBlockEntity,
-    onImageClick: () -> Unit,
-    onDelete: () -> Unit,
-    onCaptionChanged: (String) -> Unit
-) {
-    var editingCaption by remember { mutableStateOf(false) }
-    var captionText by remember(block.id) { mutableStateOf(block.textContent) }
+    val items = listOf(
+        ArcItem(Icons.Default.Image, stringResource(R.string.add_image), onAddImage, 205.0),
+        ArcItem(Icons.Default.TextFields, stringResource(R.string.add_text), onAddText, 270.0),
+        ArcItem(Icons.Default.Mic, stringResource(R.string.add_voice), onAddVoice, 335.0)
+    )
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column {
-            // Thumbnail image — constrained size, tap to view fullscreen
-            block.imageFilePath?.let { path ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 160.dp)
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                        .clickable(onClick = onImageClick)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Fan items — positioned above the main FAB in an arc
+        Box(
+            modifier = Modifier
+                .height(radiusDp + 56.dp)
+                .width(radiusDp * 2 + 40.dp)
+        ) {
+            items.forEachIndexed { index, item ->
+                val angleRad = Math.toRadians(item.angleDeg)
+                val offsetDpX = (radiusDp.value * kotlin.math.cos(angleRad)).dp
+                val offsetDpY = (radiusDp.value * kotlin.math.sin(angleRad)).dp
+
+                // Position items along the arc, center of Box is (radiusDp + 20.dp, radiusDp + 28.dp)
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = expanded,
+                    enter = fadeIn(animationSpec = tween(200, delayMillis = index * 60)) +
+                            scaleIn(initialScale = 0.3f, animationSpec = tween(250, delayMillis = index * 60)),
+                    exit = fadeOut(animationSpec = tween(120, delayMillis = (2 - index) * 30)) +
+                           scaleOut(targetScale = 0.3f, animationSpec = tween(120))
                 ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(File(path))
-                            .crossfade(true)
-                            .size(400) // downscale to 400px wide for thumbnail
-                            .build(),
-                        contentDescription = block.textContent.ifEmpty { "Image (tap to enlarge)" },
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    // "Tap to enlarge" hint
-                    Box(
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.55f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .offset(x = offsetDpX + radiusDp + 20.dp, y = offsetDpY + radiusDp + 28.dp)
                     ) {
-                        Text(
-                            "🔍 Tap to view",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
-                        )
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        FloatingActionButton(
+                            onClick = item.onClick,
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             }
-
-            // Caption + delete
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (editingCaption) {
-                    TextField(
-                        value = captionText,
-                        onValueChange = { captionText = it },
-                        placeholder = {
-                            Text(
-                                stringResource(R.string.image_caption),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                        },
-                        singleLine = true,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedIndicatorColor = MaterialTheme.colorScheme.secondary,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    // Done button to confirm caption
-                    Text(
-                        text = stringResource(R.string.done),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier
-                            .clickable {
-                                editingCaption = false
-                                if (captionText != block.textContent) {
-                                    onCaptionChanged(captionText)
-                                }
-                            }
-                            .padding(horizontal = 8.dp)
-                    )
-                } else {
-                    Text(
-                        text = block.textContent.ifEmpty { stringResource(R.string.image_caption) },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (block.textContent.isEmpty())
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                captionText = block.textContent
-                                editingCaption = true
-                            }
-                    )
-                }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.delete),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
         }
-    }
-}
 
-// ═══════════════════════════════════════════════════════════════
-// Small FAB
-// ═══════════════════════════════════════════════════════════════
-
-@Composable
-private fun SmallFab(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End
-    ) {
-        Card(
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
+        // Main FAB at bottom center
         FloatingActionButton(
-            onClick = onClick,
-            containerColor = MaterialTheme.colorScheme.tertiary,
+            onClick = onToggle,
+            containerColor = MaterialTheme.colorScheme.secondary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = CircleShape,
-            modifier = Modifier.size(40.dp)
+            shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
+            Icon(
+                if (expanded) Icons.Default.Close else Icons.Default.Add,
+                contentDescription = stringResource(R.string.add_block),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
@@ -810,4 +789,41 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = seconds / 60
     val secs = seconds % 60
     return "%d:%02d".format(minutes, secs)
+}
+
+/** Build an AnnotatedString with formatting spans for display/editing. */
+private fun buildAnnotatedForDisplay(
+    text: String,
+    spans: List<SpanInfo>
+): androidx.compose.ui.text.AnnotatedString {
+    return androidx.compose.ui.text.buildAnnotatedString {
+        append(text)
+        for (sp in spans) {
+            val start = sp.start.coerceIn(0, text.length)
+            val end = sp.end.coerceIn(0, text.length)
+            if (start < end) {
+                addStyle(spanTypeToDisplayStyle(sp.type), start, end)
+            }
+        }
+    }
+}
+
+private fun spanTypeToDisplayStyle(type: SpanType): androidx.compose.ui.text.SpanStyle {
+    return when (type) {
+        SpanType.BOLD -> androidx.compose.ui.text.SpanStyle(
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+        )
+        SpanType.ITALIC -> androidx.compose.ui.text.SpanStyle(
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+        SpanType.UNDERLINE -> androidx.compose.ui.text.SpanStyle(
+            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+        )
+        SpanType.STRIKETHROUGH -> androidx.compose.ui.text.SpanStyle(
+            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+        )
+        SpanType.HEADING -> androidx.compose.ui.text.SpanStyle(
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+        )
+    }
 }
