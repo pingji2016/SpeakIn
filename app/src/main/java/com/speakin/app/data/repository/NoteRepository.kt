@@ -6,7 +6,11 @@ import com.speakin.app.data.local.dto.NoteStats
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
+import com.speakin.app.data.local.entity.RichSegment
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -17,6 +21,8 @@ class NoteRepository @Inject constructor(
     private val noteDao: NoteDao,
     private val contentBlockDao: ContentBlockDao
 ) {
+
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
     fun getAllNotes(): Flow<List<NoteEntity>> = noteDao.getAllNotes()
 
@@ -33,10 +39,41 @@ class NoteRepository @Inject constructor(
             id = UUID.randomUUID().toString(),
             title = title,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            contentJson = json.encodeToString(emptyList<RichSegment>())  // empty rich doc
         )
         noteDao.insertNote(note)
         return note
+    }
+
+    // ─── Rich Content (v4) ─────────────────────────────────
+
+    suspend fun saveContent(noteId: String, segments: List<RichSegment>) {
+        val contentJson = json.encodeToString(segments)
+        val blockCount = segments.size  // rough count for list display
+        noteDao.updateContent(noteId, contentJson, blockCount, System.currentTimeMillis())
+    }
+
+    fun getContent(noteId: String): Flow<List<RichSegment>?> {
+        return noteDao.getNoteByIdFlow(noteId).map { note ->
+            note?.contentJson?.let { parseContent(it) }
+        }
+    }
+
+    suspend fun getContentOnce(noteId: String): List<RichSegment>? {
+        return noteDao.getNoteById(noteId)?.contentJson?.let { parseContent(it) }
+    }
+
+    fun parseSegments(jsonStr: String?): List<RichSegment>? {
+        return jsonStr?.let { parseContent(it) }
+    }
+
+    private fun parseContent(jsonStr: String): List<RichSegment>? {
+        return try {
+            json.decodeFromString<List<RichSegment>>(jsonStr)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ─── Voice Block ───────────────────────────────────────
@@ -126,7 +163,16 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun deleteNote(noteId: String) {
-        // Clean up all block files
+        // Clean up rich-content media files
+        val note = noteDao.getNoteById(noteId)
+        note?.contentJson?.let { parseContent(it) }?.forEach { seg ->
+            when (seg) {
+                is RichSegment.Image -> File(seg.imagePath).delete()
+                is RichSegment.Audio -> File(seg.audioPath).delete()
+                else -> {}
+            }
+        }
+        // Clean up legacy block files
         val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
         blocks.forEach { block ->
             block.audioFilePath?.let { File(it).delete() }
@@ -136,14 +182,7 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun deleteNotes(noteIds: List<String>) {
-        noteIds.forEach { noteId ->
-            val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
-            blocks.forEach { block ->
-                block.audioFilePath?.let { File(it).delete() }
-                block.imageFilePath?.let { File(it).delete() }
-            }
-        }
-        noteDao.deleteNotesByIds(noteIds)
+        noteIds.forEach { noteId -> deleteNote(noteId) }
     }
 
     suspend fun updateNoteTitle(noteId: String, title: String) {
@@ -158,6 +197,34 @@ class NoteRepository @Inject constructor(
 
     suspend fun exportNoteAsText(noteId: String): String? {
         val note = noteDao.getNoteById(noteId) ?: return null
+
+        // Prefer rich content (v4+)
+        val segments = note.contentJson?.let { parseContent(it) }
+        if (segments != null) {
+            return buildString {
+                appendLine(note.title)
+                appendLine("─".repeat(40))
+                segments.forEach { seg ->
+                    appendLine()
+                    when (seg) {
+                        is RichSegment.Text -> {
+                            if (seg.text.isNotBlank()) appendLine(seg.text)
+                        }
+                        is RichSegment.Audio -> {
+                            val text = seg.polishedText?.takeIf { it.isNotBlank() }
+                                ?: seg.transcription?.takeIf { it.isNotBlank() }
+                            if (text != null) appendLine(text)
+                            else appendLine("[Audio: ${formatDuration(seg.durationMs)}]")
+                        }
+                        is RichSegment.Image -> {
+                            appendLine("[Image${if (seg.altText.isNotBlank()) ": ${seg.altText}" else ""}]")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: legacy blocks
         val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
         return buildString {
             appendLine(note.title)
@@ -188,10 +255,45 @@ class NoteRepository @Inject constructor(
         }
     }
 
+    private fun formatDuration(durationMs: Long): String {
+        val seconds = durationMs / 1000
+        val minutes = seconds / 60
+        val secs = seconds % 60
+        return "%d:%02d".format(minutes, secs)
+    }
+
     fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.searchNotes(query)
 
     suspend fun getNoteStats(noteId: String): NoteStats? {
         val note = noteDao.getNoteById(noteId) ?: return null
+
+        // Rich content path (v4+)
+        val segments = note.contentJson?.let { parseContent(it) }
+        if (segments != null) {
+            return NoteStats(
+                noteId = note.id,
+                title = note.title,
+                createdAt = note.createdAt,
+                updatedAt = note.updatedAt,
+                blockCount = segments.size,
+                textBlockCount = segments.count { it is RichSegment.Text },
+                voiceBlockCount = segments.count { it is RichSegment.Audio },
+                imageBlockCount = segments.count { it is RichSegment.Image },
+                totalAudioDurationMs = segments.filterIsInstance<RichSegment.Audio>()
+                    .sumOf { it.durationMs },
+                totalTextLength = segments.sumOf { seg ->
+                    when (seg) {
+                        is RichSegment.Text -> seg.text.length
+                        is RichSegment.Audio -> (seg.transcription?.length ?: 0) +
+                            (seg.polishedText?.length ?: 0)
+                        is RichSegment.Image -> seg.altText.length
+                    }
+                },
+                usesRichContent = true
+            )
+        }
+
+        // Legacy blocks fallback
         val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
         return NoteStats(
             noteId = note.id,

@@ -27,8 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -85,6 +83,7 @@ fun RecordingBar(
         label = "micColor"
     )
 
+    val stopColor = Color(0xFFEF4444)  // 红色停止按钮
     val micGlow = micColor.copy(alpha = pulseAlpha * 0.3f)
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -182,51 +181,56 @@ fun RecordingBar(
                 horizontalArrangement = Arrangement.Center
             ) {
                 if (isRecording) {
-                    // 录制中：绿色脉冲麦克风 + 停止按钮
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(micGlow),
-                        contentAlignment = Alignment.Center
+                    // 录制中：脉冲麦克风图标 + 居中大停止按钮
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            onClick = {}, // 点击麦克风不动作，通过停止按钮停止
-                            modifier = Modifier.size(44.dp)
+                        // 脉冲麦克风指示器
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(micGlow),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Default.Mic,
                                 contentDescription = stringResource(R.string.recording),
                                 tint = micColor,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                    }
 
-                    Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
-                    Text(
-                        stringResource(R.string.recording),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = micColor
-                    )
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    Button(
-                        onClick = onStopRecording,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = SpeakInRecording
-                        ),
-                        shape = RoundedCornerShape(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Stop,
-                            contentDescription = stringResource(R.string.stop),
-                            modifier = Modifier.size(18.dp)
+                        Text(
+                            stringResource(R.string.recording),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = micColor,
+                            modifier = Modifier.weight(1f)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(stringResource(R.string.stop))
+
+                        // 大停止按钮 — 红色圆形
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(stopColor),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(
+                                onClick = onStopRecording,
+                                modifier = Modifier.size(56.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Stop,
+                                    contentDescription = stringResource(R.string.stop),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
                     }
                 } else if (isTranscribing) {
                     // 转写中

@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.kotlinx.serialization)
     alias(libs.plugins.hilt)
 }
 
@@ -124,6 +125,9 @@ dependencies {
 
     // Coil (image loading)
     implementation(libs.coil.compose)
+
+    // Kotlinx Serialization
+    implementation(libs.kotlinx.serialization.json)
 
     // ExecuTorch
     implementation(libs.executorch.core)

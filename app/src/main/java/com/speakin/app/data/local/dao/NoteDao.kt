@@ -39,6 +39,9 @@ interface NoteDao {
     @Query("UPDATE notes SET isPinned = :isPinned WHERE id = :noteId")
     suspend fun setNotePinned(noteId: String, isPinned: Boolean)
 
+    @Query("UPDATE notes SET contentJson = :contentJson, blockCount = :blockCount, updatedAt = :updatedAt WHERE id = :noteId")
+    suspend fun updateContent(noteId: String, contentJson: String?, blockCount: Int, updatedAt: Long)
+
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun getNoteCount(): Int
 
@@ -46,6 +49,7 @@ interface NoteDao {
         SELECT DISTINCT n.* FROM notes n
         LEFT JOIN content_blocks cb ON n.id = cb.noteId
         WHERE n.title LIKE '%' || :query || '%'
+           OR n.contentJson LIKE '%' || :query || '%'
            OR cb.textContent LIKE '%' || :query || '%'
            OR cb.transcription LIKE '%' || :query || '%'
            OR cb.polishedText LIKE '%' || :query || '%'

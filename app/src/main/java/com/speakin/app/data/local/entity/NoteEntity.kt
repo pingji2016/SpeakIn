@@ -10,5 +10,6 @@ data class NoteEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val blockCount: Int = 0,
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    val contentJson: String? = null  // rich-document JSON (v4+); null = legacy blocks
 )
