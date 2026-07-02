@@ -83,6 +83,7 @@ fun RecordingBar(
         label = "micColor"
     )
 
+    val stopColor = Color(0xFFEF4444)  // 红色停止按钮
     val micGlow = micColor.copy(alpha = pulseAlpha * 0.3f)
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -210,12 +211,12 @@ fun RecordingBar(
                             modifier = Modifier.weight(1f)
                         )
 
-                        // 大停止按钮 — 红色圆形，带脉冲动画
+                        // 大停止按钮 — 红色圆形
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(CircleShape)
-                                .background(micColor),
+                                .background(stopColor),
                             contentAlignment = Alignment.Center
                         ) {
                             IconButton(

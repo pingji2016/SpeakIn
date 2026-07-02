@@ -701,74 +701,25 @@ private fun FanArcMenu(
     onAddImage: () -> Unit,
     onAddVoice: () -> Unit
 ) {
-    val radiusDp = 120.dp
-
-    data class ArcItem(
-        val icon: androidx.compose.ui.graphics.vector.ImageVector,
-        val label: String,
-        val onClick: () -> Unit,
-        val angleDeg: Double
-    )
-
-    val items = listOf(
-        ArcItem(Icons.Default.Image, stringResource(R.string.add_image), onAddImage, 205.0),
-        ArcItem(Icons.Default.TextFields, stringResource(R.string.add_text), onAddText, 270.0),
-        ArcItem(Icons.Default.Mic, stringResource(R.string.add_voice), onAddVoice, 335.0)
-    )
-
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Fan items — positioned above the main FAB in an arc
-        Box(
-            modifier = Modifier
-                .height(radiusDp + 56.dp)
-                .width(radiusDp * 2 + 40.dp)
+        // Menu items — appear above the main FAB when expanded
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.5f, animationSpec = tween(200)),
+            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.5f, animationSpec = tween(150))
         ) {
-            items.forEachIndexed { index, item ->
-                val angleRad = Math.toRadians(item.angleDeg)
-                val offsetDpX = (radiusDp.value * kotlin.math.cos(angleRad)).dp
-                val offsetDpY = (radiusDp.value * kotlin.math.sin(angleRad)).dp
-
-                // Position items along the arc, center of Box is (radiusDp + 20.dp, radiusDp + 28.dp)
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = expanded,
-                    enter = fadeIn(animationSpec = tween(200, delayMillis = index * 60)) +
-                            scaleIn(initialScale = 0.3f, animationSpec = tween(250, delayMillis = index * 60)),
-                    exit = fadeOut(animationSpec = tween(120, delayMillis = (2 - index) * 30)) +
-                           scaleOut(targetScale = 0.3f, animationSpec = tween(120))
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .offset(x = offsetDpX + radiusDp + 20.dp, y = offsetDpY + radiusDp + 28.dp)
-                    ) {
-                        Card(
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Text(
-                                text = item.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        FloatingActionButton(
-                            onClick = item.onClick,
-                            containerColor = MaterialTheme.colorScheme.tertiary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            shape = CircleShape,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                MenuItem(label = stringResource(R.string.add_image), icon = Icons.Default.Image, onClick = onAddImage)
+                MenuItem(label = stringResource(R.string.add_text), icon = Icons.Default.TextFields, onClick = onAddText)
+                MenuItem(label = stringResource(R.string.add_voice), icon = Icons.Default.Mic, onClick = onAddVoice)
             }
         }
 
-        // Main FAB at bottom center
+        // Main FAB
         FloatingActionButton(
             onClick = onToggle,
             containerColor = MaterialTheme.colorScheme.secondary,
@@ -780,6 +731,36 @@ private fun FanArcMenu(
                 contentDescription = stringResource(R.string.add_block),
                 modifier = Modifier.size(24.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun MenuItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Card(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        FloatingActionButton(
+            onClick = onClick,
+            containerColor = MaterialTheme.colorScheme.tertiary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            shape = CircleShape,
+            modifier = Modifier.size(44.dp)
+        ) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
         }
     }
 }
