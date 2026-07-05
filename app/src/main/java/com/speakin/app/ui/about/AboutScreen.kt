@@ -25,7 +25,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,11 +43,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.speakin.app.data.local.ModelConfigRepository
+import com.speakin.app.ui.theme.SpeakInSuccess
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,25 +127,86 @@ fun AboutScreen(
                 }
             }
 
-            // ═══ ASR Model URL Config ═══
+            // ═══ ASR Model Config ═══
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // ── ASR model type ──
                     Text(
-                        "Speech Recognition Model URLs",
+                        "Speech Recognition Model",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Model Type", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    ModelTypeDropdown(
+                        selectedType = state.asrModelType,
+                        options = ModelConfigRepository.SUPPORTED_ASR_TYPES,
+                        onTypeSelected = { viewModel.updateAsrModelType(it) }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = { viewModel.saveAsrModelType() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save Type")
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = state.asrTypeSaved,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = SpeakInSuccess
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Saved — restart app to apply",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SpeakInSuccess
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+
+                    // ── ASR URLs ──
+                    Text(
+                        "Download URLs (one per line)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Base URLs for Whisper ASR model download. One URL per line. Leave empty to use built-in defaults.",
+                        "Leave empty to use built-in defaults.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = state.asrUrls,
@@ -146,8 +216,7 @@ fun AboutScreen(
                             .height(120.dp),
                         placeholder = {
                             Text(
-                                "https://your-cdn.example.com/models/whisper\n" +
-                                    "https://mirror.example.com/models/whisper",
+                                "https://your-cdn.example.com/models/whisper",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         },
@@ -155,23 +224,18 @@ fun AboutScreen(
                         shape = RoundedCornerShape(8.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Row(
+                    Button(
+                        onClick = { viewModel.saveAsrUrls() },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Button(
-                            onClick = { viewModel.saveAsrUrls() },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save")
-                        }
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save URLs")
                     }
 
                     AnimatedVisibility(
@@ -187,38 +251,99 @@ fun AboutScreen(
                                 Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
-                                tint = com.speakin.app.ui.theme.SpeakInSuccess
+                                tint = SpeakInSuccess
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 "Saved — takes effect on next download",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = com.speakin.app.ui.theme.SpeakInSuccess
+                                color = SpeakInSuccess
                             )
                         }
                     }
                 }
             }
 
-            // ═══ LLM Model URL Config ═══
+            // ═══ LLM Model Config ═══
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // ── LLM model type ──
                     Text(
-                        "Text Polish Model URLs",
+                        "Text Polish Model",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Model Type", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    ModelTypeDropdown(
+                        selectedType = state.llmModelType,
+                        options = ModelConfigRepository.SUPPORTED_LLM_TYPES,
+                        onTypeSelected = { viewModel.updateLlmModelType(it) }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            onClick = { viewModel.saveLlmModelType() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            )
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save Type")
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = state.llmTypeSaved,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = SpeakInSuccess
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Saved — restart app to apply",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SpeakInSuccess
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+
+                    // ── LLM URLs ──
+                    Text(
+                        "Download URLs (one per line)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Direct download URLs for Qwen3 GGUF model. One URL per line. Leave empty to use built-in defaults.",
+                        "Leave empty to use built-in defaults.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = state.llmUrls,
@@ -228,8 +353,7 @@ fun AboutScreen(
                             .height(120.dp),
                         placeholder = {
                             Text(
-                                "https://hf-mirror.com/.../qwen3-0.6b-q4_k_m.gguf\n" +
-                                    "https://huggingface.co/.../qwen3-0.6b-q4_k_m.gguf",
+                                "https://hf-mirror.com/.../qwen3-0.6b-q4_k_m.gguf",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         },
@@ -237,23 +361,18 @@ fun AboutScreen(
                         shape = RoundedCornerShape(8.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Row(
+                    Button(
+                        onClick = { viewModel.saveLlmUrls() },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Button(
-                            onClick = { viewModel.saveLlmUrls() },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save")
-                        }
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save URLs")
                     }
 
                     AnimatedVisibility(
@@ -269,13 +388,13 @@ fun AboutScreen(
                                 Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
-                                tint = com.speakin.app.ui.theme.SpeakInSuccess
+                                tint = SpeakInSuccess
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 "Saved — takes effect on next download",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = com.speakin.app.ui.theme.SpeakInSuccess
+                                color = SpeakInSuccess
                             )
                         }
                     }
@@ -299,6 +418,46 @@ fun AboutScreen(
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelTypeDropdown(
+    selectedType: String,
+    options: List<String>,
+    onTypeSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedType,
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onTypeSelected(option)
+                        expanded = false
+                    }
+                )
+            }
         }
     }
 }

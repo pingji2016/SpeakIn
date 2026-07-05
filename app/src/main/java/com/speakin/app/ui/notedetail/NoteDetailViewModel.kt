@@ -79,9 +79,9 @@ class NoteDetailViewModel @Inject constructor(
                 )
             }
         }
-        // 提前准备 ASR 模型
+        // 提前确保 ASR 模型可用（未下载时调用方触发下载）
         viewModelScope.launch {
-            asrModelManager.prepareFromAssets()
+            asrModelManager.ensureModelAvailable()
         }
     }
 
@@ -171,7 +171,7 @@ class NoteDetailViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            asrModelManager.prepareFromAssets()
+            asrModelManager.ensureModelAvailable()
 
             // Transcribe + polish on IO thread
             val (rawText, polishResult, errorMsg) = withContext(Dispatchers.IO) {

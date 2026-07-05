@@ -17,9 +17,13 @@ data class AboutUiState(
     val versionCode: Long = 0,
     val asrUrls: String = "",
     val llmUrls: String = "",
+    val asrModelType: String = ModelConfigRepository.DEFAULT_ASR_MODEL_TYPE,
+    val llmModelType: String = ModelConfigRepository.DEFAULT_LLM_MODEL_TYPE,
     val hasCustomConfig: Boolean = false,
     val asrSaved: Boolean = false,
-    val llmSaved: Boolean = false
+    val llmSaved: Boolean = false,
+    val asrTypeSaved: Boolean = false,
+    val llmTypeSaved: Boolean = false
 )
 
 @HiltViewModel
@@ -35,7 +39,6 @@ class AboutViewModel @Inject constructor(
     private val versionCode: Long
 
     init {
-        // Read version info from PackageInfo (BuildConfig not enabled in this project)
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         versionName = packageInfo.versionName ?: "unknown"
         versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -52,6 +55,8 @@ class AboutViewModel @Inject constructor(
             versionCode = versionCode,
             asrUrls = asrUrls.joinToString("\n"),
             llmUrls = llmUrls.joinToString("\n"),
+            asrModelType = configRepo.getAsrModelType(),
+            llmModelType = configRepo.getLlmModelType(),
             hasCustomConfig = configRepo.hasCustomConfig()
         )
     }
@@ -62,6 +67,14 @@ class AboutViewModel @Inject constructor(
 
     fun updateLlmUrls(urls: String) {
         _uiState.update { it.copy(llmUrls = urls, llmSaved = false) }
+    }
+
+    fun updateAsrModelType(type: String) {
+        _uiState.update { it.copy(asrModelType = type, asrTypeSaved = false) }
+    }
+
+    fun updateLlmModelType(type: String) {
+        _uiState.update { it.copy(llmModelType = type, llmTypeSaved = false) }
     }
 
     fun saveAsrUrls() {
@@ -84,6 +97,26 @@ class AboutViewModel @Inject constructor(
         }
     }
 
+    fun saveAsrModelType() {
+        configRepo.setAsrModelType(_uiState.value.asrModelType)
+        _uiState.update {
+            it.copy(
+                asrTypeSaved = true,
+                hasCustomConfig = configRepo.hasCustomConfig()
+            )
+        }
+    }
+
+    fun saveLlmModelType() {
+        configRepo.setLlmModelType(_uiState.value.llmModelType)
+        _uiState.update {
+            it.copy(
+                llmTypeSaved = true,
+                hasCustomConfig = configRepo.hasCustomConfig()
+            )
+        }
+    }
+
     fun resetToDefaults() {
         configRepo.resetAll()
         _uiState.update {
@@ -92,9 +125,13 @@ class AboutViewModel @Inject constructor(
                 versionCode = versionCode,
                 asrUrls = "",
                 llmUrls = "",
+                asrModelType = ModelConfigRepository.DEFAULT_ASR_MODEL_TYPE,
+                llmModelType = ModelConfigRepository.DEFAULT_LLM_MODEL_TYPE,
                 hasCustomConfig = false,
                 asrSaved = true,
-                llmSaved = true
+                llmSaved = true,
+                asrTypeSaved = true,
+                llmTypeSaved = true
             )
         }
     }

@@ -7,10 +7,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 用户自定义模型下载地址的持久化存储。
+ * 用户自定义模型配置的持久化存储。
  *
- * 允许用户在 About 页面中配置自定义的模型下载 URL，
- * 优先级高于代码中硬编码的默认地址。
+ * 允许用户在 About 页面中配置自定义的模型下载地址和模型类型，
+ * 优先级高于代码中硬编码的默认值。
  */
 @Singleton
 class ModelConfigRepository @Inject constructor(
@@ -19,12 +19,24 @@ class ModelConfigRepository @Inject constructor(
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    // ─── ASR (Whisper) 模型 URL ───
+    // ─── ASR (Whisper) 模型类型 ───
 
     /**
-     * 获取用户自定义的 ASR 模型下载基础 URL 列表。
-     * 一行一个 URL，空字符串或空白行会被过滤。
+     * 获取用户自定义的 ASR 模型类型。
      */
+    fun getAsrModelType(): String {
+        return prefs.getString(KEY_ASR_MODEL_TYPE, DEFAULT_ASR_MODEL_TYPE) ?: DEFAULT_ASR_MODEL_TYPE
+    }
+
+    /**
+     * 设置 ASR 模型类型。
+     */
+    fun setAsrModelType(type: String) {
+        prefs.edit().putString(KEY_ASR_MODEL_TYPE, type).apply()
+    }
+
+    // ─── ASR (Whisper) 模型 URL ───
+
     fun getAsrBaseUrls(): List<String> {
         val raw = prefs.getString(KEY_ASR_URLS, null) ?: return emptyList()
         return raw.lines()
@@ -32,28 +44,33 @@ class ModelConfigRepository @Inject constructor(
             .filter { it.isNotEmpty() }
     }
 
-    /**
-     * 设置 ASR 模型下载基础 URL。
-     * @param urls 每行一个 URL
-     */
     fun setAsrBaseUrls(urls: String) {
         prefs.edit().putString(KEY_ASR_URLS, urls).apply()
     }
 
-    /**
-     * 获取有效的 ASR URL 列表：用户自定义 > 内置默认。
-     */
     fun getEffectiveAsrUrls(): List<String> {
         val custom = getAsrBaseUrls()
         return custom.ifEmpty { DEFAULT_ASR_URLS }
     }
 
-    // ─── LLM 模型 URL ───
+    // ─── LLM 模型类型 ───
 
     /**
-     * 获取用户自定义的 LLM 模型下载 URL 列表。
-     * 一行一个 URL。
+     * 获取用户自定义的 LLM 模型类型（GGUF 文件名）。
      */
+    fun getLlmModelType(): String {
+        return prefs.getString(KEY_LLM_MODEL_TYPE, DEFAULT_LLM_MODEL_TYPE) ?: DEFAULT_LLM_MODEL_TYPE
+    }
+
+    /**
+     * 设置 LLM 模型类型（GGUF 文件名）。
+     */
+    fun setLlmModelType(type: String) {
+        prefs.edit().putString(KEY_LLM_MODEL_TYPE, type).apply()
+    }
+
+    // ─── LLM 模型 URL ───
+
     fun getLlmUrls(): List<String> {
         val raw = prefs.getString(KEY_LLM_URLS, null) ?: return emptyList()
         return raw.lines()
@@ -61,17 +78,10 @@ class ModelConfigRepository @Inject constructor(
             .filter { it.isNotEmpty() }
     }
 
-    /**
-     * 设置 LLM 模型下载 URL。
-     * @param urls 每行一个 URL
-     */
     fun setLlmUrls(urls: String) {
         prefs.edit().putString(KEY_LLM_URLS, urls).apply()
     }
 
-    /**
-     * 获取有效的 LLM URL 列表：用户自定义 > 内置默认。
-     */
     fun getEffectiveLlmUrls(): List<String> {
         val custom = getLlmUrls()
         return custom.ifEmpty { DEFAULT_LLM_URLS }
@@ -79,27 +89,46 @@ class ModelConfigRepository @Inject constructor(
 
     // ─── 重置 ───
 
-    /**
-     * 清除所有自定义配置，恢复使用内置默认地址。
-     */
     fun resetAll() {
         prefs.edit()
             .remove(KEY_ASR_URLS)
             .remove(KEY_LLM_URLS)
+            .remove(KEY_ASR_MODEL_TYPE)
+            .remove(KEY_LLM_MODEL_TYPE)
             .apply()
     }
 
-    /**
-     * 检查是否有任何自定义配置。
-     */
     fun hasCustomConfig(): Boolean {
-        return getAsrBaseUrls().isNotEmpty() || getLlmUrls().isNotEmpty()
+        return getAsrBaseUrls().isNotEmpty() ||
+                getLlmUrls().isNotEmpty() ||
+                getAsrModelType() != DEFAULT_ASR_MODEL_TYPE ||
+                getLlmModelType() != DEFAULT_LLM_MODEL_TYPE
     }
 
     companion object {
         private const val PREFS_NAME = "speakin_model_config"
         private const val KEY_ASR_URLS = "asr_base_urls"
         private const val KEY_LLM_URLS = "llm_model_urls"
+        private const val KEY_ASR_MODEL_TYPE = "asr_model_type"
+        private const val KEY_LLM_MODEL_TYPE = "llm_model_type"
+
+        /** 默认 ASR 模型类型 */
+        const val DEFAULT_ASR_MODEL_TYPE = "whisper-tiny"
+        /** 支持的 ASR 模型类型列表 */
+        val SUPPORTED_ASR_TYPES = listOf(
+            DEFAULT_ASR_MODEL_TYPE,
+            "whisper-base",
+            "whisper-small"
+        )
+
+        /** 默认 LLM 模型类型（GGUF 文件名） */
+        const val DEFAULT_LLM_MODEL_TYPE = "qwen3-0.6b-q4_k_m.gguf"
+        /** 支持的 LLM 模型类型列表 */
+        val SUPPORTED_LLM_TYPES = listOf(
+            DEFAULT_LLM_MODEL_TYPE,
+            "qwen3-1.5b-q4_k_m.gguf",
+            "qwen3-0.6b-q8_0.gguf"
+        )
 
         /** 内置默认 ASR 下载地址 */
         val DEFAULT_ASR_URLS = listOf(
