@@ -119,11 +119,4 @@ class AsrModelManager @Inject constructor(
         }
     }
 
-    /**
-     * 下载所有模型文件。与 [downloadModel] 相同，保留兼容别名。
-     */
-    suspend fun downloadAll(onProgress: ((Float) -> Unit)? = null): Boolean {
-        Log.i(TAG, "Starting model download...")
-        return downloadModel()
-    }
 }
