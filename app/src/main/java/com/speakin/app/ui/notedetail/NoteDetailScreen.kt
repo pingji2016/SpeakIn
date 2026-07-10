@@ -58,6 +58,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,6 +87,7 @@ import com.speakin.app.data.local.entity.SpanInfo
 import com.speakin.app.data.local.entity.SpanType
 import com.speakin.app.ui.recording.RecordingBar
 import com.speakin.app.ui.theme.SpeakInRecording
+import com.speakin.app.util.FormatUtils
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -292,6 +294,29 @@ fun NoteDetailScreen(
                         }
                     }
 
+                    // Transcribe error with no segments yet — show error with retry option
+                    uiState.segments.isEmpty() && !uiState.isRecording && uiState.transcribeError != null -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(64.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = uiState.transcribeError ?: "Transcription failed",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+
                     // Empty state (no segments, not recording)
                     uiState.segments.isEmpty() && !uiState.isRecording && !uiState.isTranscribing -> {
                         Box(
@@ -462,13 +487,23 @@ private fun EditableTextSegment(
     onDelete: () -> Unit,
     showDelete: Boolean = true
 ) {
-    var textFieldValue by remember(text) {
+    var textFieldValue by remember {
         mutableStateOf(
             TextFieldValue(
                 annotatedString = buildAnnotatedForDisplay(text, spans),
                 selection = TextRange(text.length)
             )
         )
+    }
+
+    // Sync when external changes modify the text (e.g. undo, paste from another source)
+    LaunchedEffect(text) {
+        if (text != textFieldValue.text) {
+            textFieldValue = TextFieldValue(
+                annotatedString = buildAnnotatedForDisplay(text, spans),
+                selection = TextRange(text.length)
+            )
+        }
     }
 
     Row(
@@ -594,7 +629,7 @@ private fun AudioSegmentView(
     var expanded by remember { mutableStateOf(false) }
     val label = polishedText?.takeIf { it.isNotBlank() }
         ?: transcription?.takeIf { it.isNotBlank() }
-        ?: "Audio (${formatDuration(durationMs)})"
+        ?: "Audio (${FormatUtils.formatDuration(durationMs)})"
 
     Column(
         modifier = Modifier
@@ -639,7 +674,7 @@ private fun AudioSegmentView(
             )
 
             Text(
-                text = formatDuration(durationMs),
+                text = FormatUtils.formatDuration(durationMs),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -763,13 +798,6 @@ private fun MenuItem(
             Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
         }
     }
-}
-
-private fun formatDuration(durationMs: Long): String {
-    val seconds = durationMs / 1000
-    val minutes = seconds / 60
-    val secs = seconds % 60
-    return "%d:%02d".format(minutes, secs)
 }
 
 /** Build an AnnotatedString with formatting spans for display/editing. */

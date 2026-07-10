@@ -7,6 +7,7 @@ import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
 import com.speakin.app.data.local.entity.RichSegment
+import com.speakin.app.util.FormatUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -66,6 +67,41 @@ class NoteRepository @Inject constructor(
 
     fun parseSegments(jsonStr: String?): List<RichSegment>? {
         return jsonStr?.let { parseContent(it) }
+    }
+
+    /**
+     * 将旧版 content_blocks 表数据转换为 RichSegment 列表并保存到 contentJson。
+     * 仅在 note.contentJson 为 null 时调用，迁移后不再重复。
+     */
+    suspend fun migrateLegacyNoteIfNeeded(noteId: String): List<RichSegment>? {
+        val note = noteDao.getNoteById(noteId) ?: return null
+        // Already migrated — return existing content
+        note.contentJson?.let { return parseContent(it) }
+
+        val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+        if (blocks.isEmpty()) return null
+
+        val segments = blocks.map { block ->
+            when (block.blockType) {
+                BlockType.TEXT -> RichSegment.Text(
+                    text = block.textContent.orEmpty()
+                )
+                BlockType.VOICE -> RichSegment.Audio(
+                    audioPath = block.audioFilePath.orEmpty(),
+                    durationMs = block.durationMs ?: 0L,
+                    transcription = block.transcription?.takeIf { it.isNotBlank() },
+                    polishedText = block.polishedText?.takeIf { it.isNotBlank() }
+                )
+                BlockType.IMAGE -> RichSegment.Image(
+                    imagePath = block.imageFilePath.orEmpty(),
+                    altText = block.textContent.orEmpty()
+                )
+            }
+        }
+
+        // Persist the migration
+        saveContent(noteId, segments)
+        return segments
     }
 
     private fun parseContent(jsonStr: String): List<RichSegment>? {
@@ -182,7 +218,25 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun deleteNotes(noteIds: List<String>) {
-        noteIds.forEach { noteId -> deleteNote(noteId) }
+        // Clean up media files for all notes first
+        for (noteId in noteIds) {
+            val note = noteDao.getNoteById(noteId)
+            note?.contentJson?.let { parseContent(it) }?.forEach { seg ->
+                when (seg) {
+                    is RichSegment.Image -> File(seg.imagePath).delete()
+                    is RichSegment.Audio -> File(seg.audioPath).delete()
+                    else -> {}
+                }
+            }
+            // Clean up legacy block files
+            val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
+            blocks.forEach { block ->
+                block.audioFilePath?.let { File(it).delete() }
+                block.imageFilePath?.let { File(it).delete() }
+            }
+        }
+        // Batch delete from database
+        noteDao.deleteNotesByIds(noteIds)
     }
 
     suspend fun updateNoteTitle(noteId: String, title: String) {
@@ -214,7 +268,7 @@ class NoteRepository @Inject constructor(
                             val text = seg.polishedText?.takeIf { it.isNotBlank() }
                                 ?: seg.transcription?.takeIf { it.isNotBlank() }
                             if (text != null) appendLine(text)
-                            else appendLine("[Audio: ${formatDuration(seg.durationMs)}]")
+                            else appendLine("[Audio: ${FormatUtils.formatDuration(seg.durationMs)}]")
                         }
                         is RichSegment.Image -> {
                             appendLine("[Image${if (seg.altText.isNotBlank()) ": ${seg.altText}" else ""}]")
@@ -253,13 +307,6 @@ class NoteRepository @Inject constructor(
                 }
             }
         }
-    }
-
-    private fun formatDuration(durationMs: Long): String {
-        val seconds = durationMs / 1000
-        val minutes = seconds / 60
-        val secs = seconds % 60
-        return "%d:%02d".format(minutes, secs)
     }
 
     fun searchNotes(query: String): Flow<List<NoteEntity>> = noteDao.searchNotes(query)

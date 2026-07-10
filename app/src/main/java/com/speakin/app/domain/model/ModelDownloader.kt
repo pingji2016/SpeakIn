@@ -1,6 +1,8 @@
 package com.speakin.app.domain.model
 
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -40,7 +42,7 @@ class ModelDownloader @Inject constructor() {
         connectTimeout: Int = DEFAULT_CONNECT_TIMEOUT,
         readTimeout: Int = DEFAULT_READ_TIMEOUT,
         onProgress: ((Float) -> Unit)? = null
-    ): DownloadResult {
+    ): DownloadResult = withContext(Dispatchers.IO) {
         destFile.parentFile?.mkdirs()
 
         for (urlStr in urls) {
@@ -79,14 +81,14 @@ class ModelDownloader @Inject constructor() {
 
                 if (destFile.exists() && destFile.length() >= minSize) {
                     onProgress?.invoke(1f)
-                    return DownloadResult(success = true)
+                    return@withContext DownloadResult(success = true)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Download failed from $urlStr: ${e.message}")
             }
         }
 
-        return DownloadResult(
+        return@withContext DownloadResult(
             success = false,
             error = "All mirrors failed for ${destFile.name}"
         )
@@ -105,17 +107,22 @@ class ModelDownloader @Inject constructor() {
         readTimeout: Int = DEFAULT_READ_TIMEOUT,
         onOverallProgress: ((Float) -> Unit)? = null,
         onFileError: ((String) -> Unit)? = null
-    ): DownloadResult {
+    ): DownloadResult = withContext(Dispatchers.IO) {
         outputDir.mkdirs()
         var completed = 0
         val total = fileNames.size
 
         for (fileName in fileNames) {
             val dest = File(outputDir, fileName)
-            if (dest.exists() && dest.length() >= minFileSize) {
+            // Skip only if file exists AND is non-empty; re-download 0-byte or partial files
+            if (dest.exists() && dest.length() > 0 && dest.length() >= minFileSize) {
                 completed++
                 onOverallProgress?.invoke(completed.toFloat() / total)
                 continue
+            }
+            // Delete partial/stale file before re-downloading
+            if (dest.exists() && dest.length() < minFileSize) {
+                dest.delete()
             }
 
             val fileUrls = baseUrls.map { "$it/$fileName" }
@@ -133,7 +140,7 @@ class ModelDownloader @Inject constructor() {
 
             if (!result.success) {
                 onFileError?.invoke(fileName)
-                return DownloadResult(
+                return@withContext DownloadResult(
                     success = false,
                     error = "Failed to download $fileName: ${result.error}"
                 )
@@ -143,6 +150,6 @@ class ModelDownloader @Inject constructor() {
             onOverallProgress?.invoke(completed.toFloat() / total)
         }
 
-        return DownloadResult(success = true)
+        return@withContext DownloadResult(success = true)
     }
 }

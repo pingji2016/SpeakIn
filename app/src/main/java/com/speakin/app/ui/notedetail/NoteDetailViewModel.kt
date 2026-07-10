@@ -70,11 +70,29 @@ class NoteDetailViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            repository.getNoteByIdFlow(noteId).collect { note ->
+            // Load note and migrate legacy blocks to rich content if needed
+            val note = repository.getNoteById(noteId)
+            var segments: List<RichSegment> = emptyList()
+            if (note != null) {
+                segments = if (note.contentJson == null) {
+                    // Legacy note — convert blocks to rich segments
+                    repository.migrateLegacyNoteIfNeeded(noteId) ?: emptyList()
+                } else {
+                    repository.parseSegments(note.contentJson) ?: emptyList()
+                }
+            }
+            _uiState.value = _uiState.value.copy(
+                note = note,
+                segments = segments,
+                isLegacyFormat = false,
+                isLoading = false
+            )
+
+            // Then reactively observe future changes
+            repository.getNoteByIdFlow(noteId).collect { updatedNote ->
                 _uiState.value = _uiState.value.copy(
-                    note = note,
-                    segments = repository.parseSegments(note?.contentJson) ?: emptyList(),
-                    isLegacyFormat = note != null && note.contentJson == null,
+                    note = updatedNote,
+                    segments = repository.parseSegments(updatedNote?.contentJson) ?: _uiState.value.segments,
                     isLoading = false
                 )
             }
@@ -96,7 +114,11 @@ class NoteDetailViewModel @Inject constructor(
     fun onSegmentsChanged(segments: List<RichSegment>) {
         _uiState.value = _uiState.value.copy(segments = segments)
         viewModelScope.launch {
-            repository.saveContent(noteId, segments)
+            try {
+                repository.saveContent(noteId, segments)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save content for note $noteId", e)
+            }
         }
     }
 
@@ -284,23 +306,27 @@ class NoteDetailViewModel @Inject constructor(
     fun deleteSegment(index: Int) {
         val currentSegments = _uiState.value.segments.toMutableList()
         if (index in currentSegments.indices) {
-            // Clean up file
             val seg = currentSegments[index]
-            when (seg) {
-                is RichSegment.Image -> File(seg.imagePath).delete()
-                is RichSegment.Audio -> {
-                    File(seg.audioPath).delete()
-                    if (seg.audioPath == _uiState.value.playingAudioPath) {
-                        audioPlayer.stop()
-                        _uiState.value = _uiState.value.copy(playingAudioPath = null)
-                    }
-                }
-                else -> {}
+            // Stop playback before cleanup if this segment is playing
+            if (seg is RichSegment.Audio && seg.audioPath == _uiState.value.playingAudioPath) {
+                audioPlayer.stop()
+                _uiState.value = _uiState.value.copy(playingAudioPath = null)
             }
             currentSegments.removeAt(index)
+            // Persist state change atomically, then clean up files
             viewModelScope.launch {
-                repository.saveContent(noteId, currentSegments)
                 _uiState.value = _uiState.value.copy(segments = currentSegments)
+                try {
+                    repository.saveContent(noteId, currentSegments)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to save after segment delete", e)
+                }
+                // Clean up files after successful persistence
+                when (seg) {
+                    is RichSegment.Image -> File(seg.imagePath).delete()
+                    is RichSegment.Audio -> File(seg.audioPath).delete()
+                    else -> {}
+                }
             }
         }
     }

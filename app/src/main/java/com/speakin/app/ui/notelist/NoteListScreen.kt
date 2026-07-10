@@ -74,6 +74,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.speakin.app.R
 import com.speakin.app.data.local.dto.NoteStats
 import com.speakin.app.data.local.entity.NoteEntity
+import com.speakin.app.util.FormatUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -508,7 +509,7 @@ fun NoteListScreen(
                         if (stats.totalAudioDurationMs > 0) {
                             DetailRow(
                                 stringResource(R.string.total_audio_duration),
-                                formatDuration(stats.totalAudioDurationMs)
+                                FormatUtils.formatDurationHuman(stats.totalAudioDurationMs)
                             )
                         }
                         DetailRow(
@@ -550,12 +551,6 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
-private fun formatDuration(totalMs: Long): String {
-    val totalSeconds = totalMs / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

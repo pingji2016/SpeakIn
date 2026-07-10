@@ -32,7 +32,7 @@ class AsrModelManager @Inject constructor(
             "tokenizer.json"
         )
         private const val MODEL_DIR_NAME = "whisper"
-        private const val MIN_FILE_SIZE = 1000L
+        private const val MIN_FILE_SIZE = 100_000L  // 100KB — catches truncated downloads
     }
 
     /** 获取有效的 ASR 下载基础 URL 列表：用户自定义 > 内置默认 */

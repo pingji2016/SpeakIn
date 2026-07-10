@@ -105,8 +105,8 @@ class AudioBuffer(private val maxSamples: Int = 480000) { // 默认 30s @ 16kHz
      * 用于流式识别的部分结果，限制 AIDL 传输大小。
      */
     fun toFloatArrayTail(sampleCount: Int): FloatArray {
-        val count = sampleCount.coerceAtMost(totalSamples)
         synchronized(lock) {
+            val count = sampleCount.coerceAtMost(totalSamples)
             val result = FloatArray(count)
             var remaining = count
             var resultOffset = 0
@@ -140,7 +140,9 @@ class AudioBuffer(private val maxSamples: Int = 480000) { // 默认 30s @ 16kHz
      * 获取全部累积数据的副本。
      */
     fun toFloatArrayFull(): FloatArray {
-        return toFloatArray(totalSamples)
+        synchronized(lock) {
+            return toFloatArray(totalSamples)
+        }
     }
 
     /**
