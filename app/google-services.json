@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1095289396478",
+    "project_id": "speakin-217cf",
+    "storage_bucket": "speakin-217cf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095289396478:android:fdc97994b021e39e2359af",
+        "android_client_info": {
+          "package_name": "com.speakin.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBRQ9cXohTgbj1pK-sehcRWK_wx5qrC9FA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

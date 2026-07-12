@@ -224,21 +224,12 @@ tasks.register("downloadWhisperModel") {
             }
         }
 
-        // 2. 复制到 assets，让模型打包进 APK
-        val assetsDir = file("src/main/assets/models/whisper")
-        assetsDir.mkdirs()
-
-        for ((filename, _) in WHISPER_MODEL_FILES) {
-            val src = File(modelDir, filename)
-            if (src.exists()) {
-                src.copyTo(File(assetsDir, filename), overwrite = true)
-            }
-        }
-
         println()
         println("=".repeat(60))
-        println("  ✅ Whisper 模型已就绪，直接构建 APK 即可：")
-        println("    .\\gradlew :app:assembleDebug")
+        println("  ✅ Whisper 模型已下载到 whisper_models/")
+        println()
+        println("  本地调试 APK：.\\gradlew :app:assembleDebug")
+        println("  发布 AAB：    .\\gradlew :app:bundleRelease")
         println("=".repeat(60))
     }
 }
@@ -271,17 +262,8 @@ tasks.register("downloadLlmModel") {
 
         println()
         println("=".repeat(60))
-        println("  📁 模型文件: ${target.absolutePath}")
-        println()
-        println("  ✅ 模型已下载完成，已复制到 assets/ 目录。")
-        println("  现在直接构建 APK 即可（模型已打包在 APK 中）：")
-        println("    .\\gradlew :app:assembleDebug")
+        println("  ✅ LLM 模型已下载到 llm_models/（运行时下载，不打包进 APK）")
         println("=".repeat(60))
-
-        // Copy to assets so model is bundled in APK
-        val assetsDir = file("src/main/assets/models")
-        assetsDir.mkdirs()
-        target.copyTo(File(assetsDir, filename), overwrite = true)
     }
 }
 
@@ -291,19 +273,36 @@ tasks.register("downloadAllModels") {
     dependsOn("downloadWhisperModel", "downloadLlmModel")
 }
 
-// 构建 APK 时自动下载 Whisper 模型（已下载则跳过）
-afterEvaluate {
-    tasks.matching { it.name in setOf("mergeReleaseAssets", "mergeDebugAssets") }
-        .configureEach { dependsOn("downloadWhisperModel") }
+// ── 复制模型到 base assets（仅供本地调试 APK 使用） ──
+tasks.register<Copy>("copyModelsToBaseAssets") {
+    group = "SpeakIn"
+    description = "复制 whisper 模型到 app/src/main/assets/（本地调试 APK）"
+
+    val srcDir = whisperModelDir.asFile
+    val dstDir = file("src/main/assets/models/whisper")
+
+    from(srcDir) {
+        include("whisper_pre_enc.pte", "whisper_decoder.pte", "tokenizer.json")
+    }
+    into(dstDir)
+
+    doFirst {
+        dstDir.mkdirs()
+        println("Copying model files to base assets: ${dstDir.absolutePath}")
+    }
+
+    doLast {
+        println("Model files copied to base assets (for debug APK).")
+    }
 }
 
-// 将 whisper 模型文件复制到 asset pack 中（用于 AAB 构建）
+// ── 复制模型到 asset pack（用于 AAB 发布构建） ──
 tasks.register<Copy>("copyModelsToAssetPack") {
     group = "SpeakIn"
-    description = "复制 whisper 模型到 speakin_assets asset pack"
+    description = "复制 whisper 模型到 speakin_assets asset pack（AAB 发布）"
 
-    val srcDir = rootProject.layout.projectDirectory.dir("whisper_models").asFile
-    val dstDir = rootProject.layout.projectDirectory.dir("speakin_assets/src/main/assets").asFile
+    val srcDir = whisperModelDir.asFile
+    val dstDir = rootProject.layout.projectDirectory.dir("speakin_assets/src/main/assets/models/whisper").asFile
 
     from(srcDir) {
         include("whisper_pre_enc.pte", "whisper_decoder.pte", "tokenizer.json")
@@ -316,6 +315,21 @@ tasks.register<Copy>("copyModelsToAssetPack") {
     }
 
     doLast {
-        println("Model files copied to asset pack successfully.")
+        println("Model files copied to asset pack (for AAB).")
     }
+}
+
+// ── 自动依赖：调试构建从 base assets 取模型，发布构建从 asset pack 取 ──
+afterEvaluate {
+    // 调试 APK：自动复制模型到 base assets
+    tasks.matching { it.name == "mergeDebugAssets" }
+        .configureEach { dependsOn("copyModelsToBaseAssets") }
+
+    // 发布 AAB：自动复制模型到 asset pack（不走 base assets，避免超过 200MB 限制）
+    tasks.matching { it.name == "bundleRelease" || it.name == "bundleDebug" }
+        .configureEach { dependsOn("copyModelsToAssetPack") }
+
+    // Asset pack 打包前需要先复制模型文件
+    tasks.matching { it.name.startsWith("assetPack") && it.name.endsWith("PreBundleTask") }
+        .configureEach { dependsOn("copyModelsToAssetPack") }
 }
