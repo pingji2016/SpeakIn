@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隐私政策 - SpeakIn</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            color: #333;
+            line-height: 1.8;
+        }
+        h1 { font-size: 24px; margin-bottom: 8px; }
+        h2 { font-size: 18px; margin-top: 32px; }
+        .date { color: #888; font-size: 14px; margin-bottom: 32px; }
+        a { color: #1976d2; }
+    </style>
+</head>
+<body>
+    <h1>隐私政策</h1>
+    <p class="date">最后更新日期：2026 年 7 月 12 日</p>
+
+    <p>SpeakIn（以下简称"我们"或"本应用"）高度重视您的隐私。本隐私政策旨在向您说明本应用如何处理您的数据。</p>
+
+    <h2>1. 数据收集与存储</h2>
+    <p><strong>本应用不收集、不上传、不分享您的任何个人数据。</strong></p>
+    <p>所有语音录音、文字笔记、图片附件等数据均<strong>仅存储在您的设备本地</strong>。我们无法访问这些数据，也没有任何后端服务器来接收或存储您的数据。</p>
+
+    <h2>2. 麦克风权限</h2>
+    <p>本应用请求麦克风权限（android.permission.RECORD_AUDIO）的唯一目的是在您主动触发录音功能时录制语音笔记。录音仅在您点击录音按钮期间进行，不会在后台静默录音。</p>
+
+    <h2>3. 存储权限</h2>
+    <p>本应用请求存储/媒体权限（READ_EXTERNAL_STORAGE / READ_MEDIA_IMAGES）的唯一目的是让您能够从设备中选择图片插入到笔记中。我们不会读取或访问任何其他文件。</p>
+
+    <h2>4. AI 模型下载</h2>
+    <p>首次使用时，本应用需要从以下来源下载 AI 模型文件（语音识别模型约 180MB，文字润色模型约 400MB）：</p>
+    <ul>
+        <li>HuggingFace CDN</li>
+        <li>SpeakIn 自有 CDN（cdn.speakin.app）</li>
+        <li>您自定义的下载地址（可在设置中配置）</li>
+    </ul>
+    <p>下载模型时，CDN 服务器会接收到标准的 HTTP 请求信息（包括您的 IP 地址），这是完成下载所必需的技术过程。本应用本身不会主动上传或分享任何信息给第三方。</p>
+
+    <h2>5. 数据安全</h2>
+    <p>您的所有数据（笔记、录音、图片、转写文本）均存储在应用的私有目录中，其他应用无法访问。您可以随时在应用内删除任何笔记及其关联的媒体文件。</p>
+
+    <h2>6. 离线运行</h2>
+    <p>本应用的核心功能（语音识别、文字润色、笔记管理）完全在设备本地运行，无需联网。模型下载后，您可以在完全离线的环境下使用本应用。</p>
+
+    <h2>7. 第三方服务</h2>
+    <p>本应用未集成任何第三方分析、广告或统计 SDK。当前版本不包含 Firebase、Google Analytics、AdMob 或其他任何数据收集服务。</p>
+
+    <h2>8. 儿童隐私</h2>
+    <p>本应用不面向 13 岁以下儿童，也不会有意收集儿童的个人信息。</p>
+
+    <h2>9. 隐私政策更新</h2>
+    <p>我们可能会不时更新本隐私政策。更新后的政策将在应用内或通过其他适当方式通知您。</p>
+
+    <h2>10. 联系我们</h2>
+    <p>如果您对本隐私政策有任何疑问，请联系：<a href="mailto:pingji@example.com">pingji@example.com</a></p>
+    <p>或通过 GitHub Issues：<a href="https://github.com/pingji/SpeakIn/issues">github.com/pingji/SpeakIn/issues</a></p>
+</body>
+</html>
