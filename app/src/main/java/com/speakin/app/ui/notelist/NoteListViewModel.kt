@@ -104,6 +104,14 @@ class NoteListViewModel @Inject constructor(
 
     // ─── Batch Selection ──────────────────────────────────
 
+    /** Enter batch-selection mode without pre-selecting any note. */
+    fun enterSelectionMode() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = true,
+            selectedNoteIds = emptySet()
+        )
+    }
+
     fun enterSelectionMode(noteId: String) {
         _uiState.value = _uiState.value.copy(
             isSelectionMode = true,

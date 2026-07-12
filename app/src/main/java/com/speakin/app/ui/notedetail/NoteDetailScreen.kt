@@ -97,8 +97,6 @@ fun NoteDetailScreen(
     viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var editingTitle by remember { mutableStateOf(false) }
-    var titleText by remember { mutableStateOf("") }
     var showAddMenu by remember { mutableStateOf(false) }
     var fullscreenImagePath by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -174,52 +172,18 @@ fun NoteDetailScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        if (editingTitle) {
-                            TextField(
-                                value = titleText,
-                                onValueChange = { titleText = it },
-                                singleLine = true,
-                                colors = TextFieldDefaults.colors(
-                                    focusedContainerColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.primary,
-                                    focusedTextColor = MaterialTheme.colorScheme.onPrimary,
-                                    unfocusedTextColor = MaterialTheme.colorScheme.onPrimary,
-                                    cursorColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Text(
-                                uiState.note?.title?.ifEmpty { stringResource(R.string.untitled_note) }
-                                    ?: stringResource(R.string.note),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            stringResource(R.string.note),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.back)
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = {
-                            if (editingTitle) {
-                                viewModel.updateTitle(titleText)
-                            } else {
-                                titleText = uiState.note?.title ?: ""
-                            }
-                            editingTitle = !editingTitle
-                        }) {
-                            Icon(
-                                if (editingTitle) Icons.Default.Stop else Icons.Default.Edit,
-                                contentDescription = if (editingTitle) stringResource(R.string.save)
-                                else stringResource(R.string.edit_title),
-                                modifier = Modifier.size(22.dp)
                             )
                         }
                     },
@@ -257,13 +221,22 @@ fun NoteDetailScreen(
                         )
                     }
                 }
+            },
+            bottomBar = {
+                RecordingBar(
+                    isRecording = uiState.isRecording,
+                    onStartRecording = { requestMicThenRecord() },
+                    onStopRecording = { viewModel.stopRecording() },
+                    liveCaption = uiState.liveCaption,
+                    liveCaptionStableLen = uiState.liveCaptionStableLen,
+                    isTranscribing = uiState.isTranscribing
+                )
             }
         ) { padding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(bottom = 80.dp)
             ) {
                 when {
                     // Loading
@@ -363,17 +336,6 @@ fun NoteDetailScreen(
                     }
                 }
             }
-
-            // ─── Recording bar ───
-            RecordingBar(
-                isRecording = uiState.isRecording,
-                onStartRecording = { requestMicThenRecord() },
-                onStopRecording = { viewModel.stopRecording() },
-                liveCaption = uiState.liveCaption,
-                liveCaptionStableLen = uiState.liveCaptionStableLen,
-                isTranscribing = uiState.isTranscribing,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
@@ -510,7 +472,7 @@ private fun EditableTextSegment(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Top
     ) {

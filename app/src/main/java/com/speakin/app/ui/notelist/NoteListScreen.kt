@@ -29,8 +29,12 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RateReview
@@ -38,9 +42,12 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -229,6 +236,13 @@ fun NoteListScreen(
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
+                        IconButton(onClick = { viewModel.enterSelectionMode() }) {
+                            Icon(
+                                Icons.Default.Checklist,
+                                contentDescription = stringResource(R.string.select_notes),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                         IconButton(onClick = onNavigateToSettings) {
                             Icon(
                                 Icons.Default.Settings,
@@ -350,7 +364,23 @@ fun NoteListScreen(
                                 onNavigateToDetail(note.id)
                             }
                         },
-                        onLongClick = { viewModel.enterSelectionMode(note.id) },
+                        onLongClick = {
+                            if (!uiState.isSelectionMode) {
+                                viewModel.enterSelectionMode(note.id)
+                            }
+                        },
+                        onPin = { viewModel.togglePin(note.id) },
+                        onRename = {
+                            renameNoteId = note.id
+                            renameText = note.title
+                            showRenameDialog = true
+                        },
+                        onDetails = { viewModel.showNoteDetails(note.id) },
+                        onExport = { viewModel.exportNote(note.id) },
+                        onDelete = {
+                            deleteNoteId = note.id
+                            showDeleteConfirm = true
+                        },
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(400),
                             fadeOutSpec = tween(300)
@@ -380,7 +410,23 @@ fun NoteListScreen(
                                 onNavigateToDetail(note.id)
                             }
                         },
-                        onLongClick = { viewModel.enterSelectionMode(note.id) },
+                        onLongClick = {
+                            if (!uiState.isSelectionMode) {
+                                viewModel.enterSelectionMode(note.id)
+                            }
+                        },
+                        onPin = { viewModel.togglePin(note.id) },
+                        onRename = {
+                            renameNoteId = note.id
+                            renameText = note.title
+                            showRenameDialog = true
+                        },
+                        onDetails = { viewModel.showNoteDetails(note.id) },
+                        onExport = { viewModel.exportNote(note.id) },
+                        onDelete = {
+                            deleteNoteId = note.id
+                            showDeleteConfirm = true
+                        },
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(400),
                             fadeOutSpec = tween(300)
@@ -497,8 +543,6 @@ fun NoteListScreen(
                 title = { Text(stringResource(R.string.note_details_title)) },
                 text = {
                     Column {
-                        DetailRow(stringResource(R.string.title_label), stats.title.ifEmpty { stringResource(R.string.untitled_note) })
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                         DetailRow(stringResource(R.string.created_time), dateFormat.format(Date(stats.createdAt)))
                         DetailRow(stringResource(R.string.modified_time), dateFormat.format(Date(stats.updatedAt)))
                         HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
@@ -560,9 +604,18 @@ private fun NoteCard(
     isSelectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPin: () -> Unit,
+    onRename: () -> Unit,
+    onDetails: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val preview = remember(note.contentJson) {
+        FormatUtils.extractContentPreview(note.contentJson, 10)
+    }
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
         else Color.Transparent
     val bgColor = if (isSelected)
@@ -577,7 +630,10 @@ private fun NoteCard(
                 .clip(RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = onLongClick
+                    onLongClick = {
+                        if (isSelectionMode) onLongClick()
+                        else menuExpanded = true
+                    }
                 ),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             shape = RoundedCornerShape(12.dp),
@@ -648,7 +704,7 @@ private fun NoteCard(
                             Spacer(modifier = Modifier.width(4.dp))
                         }
                         Text(
-                            text = note.title.ifEmpty { stringResource(R.string.untitled_note) },
+                            text = preview.ifEmpty { stringResource(R.string.untitled_note) },
                             style = MaterialTheme.typography.titleMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -686,6 +742,96 @@ private fun NoteCard(
                 }
             }
         }
+
+        // 长按弹出菜单
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (note.isPinned) stringResource(R.string.unpin_note)
+                        else stringResource(R.string.pin_note)
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onPin()
+                },
+                leadingIcon = {
+                    Icon(
+                        if (note.isPinned) Icons.Outlined.PushPin
+                        else Icons.Filled.PushPin,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rename_note)) },
+                onClick = {
+                    menuExpanded = false
+                    onRename()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.note_details)) },
+                onClick = {
+                    menuExpanded = false
+                    onDetails()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.export_note)) },
+                onClick = {
+                    menuExpanded = false
+                    onExport()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.IosShare,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.delete_note),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onDelete()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            )
+        }
     }
 }
 
@@ -697,9 +843,18 @@ private fun NoteGridCard(
     isSelectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onPin: () -> Unit,
+    onRename: () -> Unit,
+    onDetails: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    val preview = remember(note.contentJson) {
+        FormatUtils.extractContentPreview(note.contentJson, 10)
+    }
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
         else Color.Transparent
     val bgColor = if (isSelected)
@@ -715,7 +870,10 @@ private fun NoteGridCard(
                 .clip(RoundedCornerShape(12.dp))
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = onLongClick
+                    onLongClick = {
+                        if (isSelectionMode) onLongClick()
+                        else menuExpanded = true
+                    }
                 ),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             shape = RoundedCornerShape(12.dp),
@@ -784,10 +942,10 @@ private fun NoteGridCard(
                     )
                 }
 
-                // 底部：标题和日期
+                // 底部：预览文本和日期
                 Column {
                     Text(
-                        text = note.title.ifEmpty { stringResource(R.string.untitled_note) },
+                        text = preview.ifEmpty { stringResource(R.string.untitled_note) },
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -802,6 +960,96 @@ private fun NoteGridCard(
                     )
                 }
             }
+        }
+
+        // 长按弹出菜单
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (note.isPinned) stringResource(R.string.unpin_note)
+                        else stringResource(R.string.pin_note)
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onPin()
+                },
+                leadingIcon = {
+                    Icon(
+                        if (note.isPinned) Icons.Outlined.PushPin
+                        else Icons.Filled.PushPin,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rename_note)) },
+                onClick = {
+                    menuExpanded = false
+                    onRename()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.note_details)) },
+                onClick = {
+                    menuExpanded = false
+                    onDetails()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.export_note)) },
+                onClick = {
+                    menuExpanded = false
+                    onExport()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.IosShare,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.delete_note),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                onClick = {
+                    menuExpanded = false
+                    onDelete()
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            )
         }
     }
 }

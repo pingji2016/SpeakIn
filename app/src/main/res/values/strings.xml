@@ -64,6 +64,7 @@
     <string name="delete_notes_message">Are you sure you want to delete %d notes? This cannot be undone.</string>
     <string name="selected">selected</string>
     <string name="select_all">Select all</string>
+    <string name="select_notes">Select notes</string>
 
     <!-- Search -->
     <string name="search_hint">Search notes…</string>

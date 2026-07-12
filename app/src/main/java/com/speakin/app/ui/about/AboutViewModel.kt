@@ -1,15 +1,19 @@
 package com.speakin.app.ui.about
 
+import android.app.Activity
 import android.content.Context
 import android.os.Build
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.speakin.app.data.local.ModelConfigRepository
+import com.speakin.app.update.UpdateChecker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class AboutUiState(
@@ -23,13 +27,15 @@ data class AboutUiState(
     val asrSaved: Boolean = false,
     val llmSaved: Boolean = false,
     val asrTypeSaved: Boolean = false,
-    val llmTypeSaved: Boolean = false
+    val llmTypeSaved: Boolean = false,
+    val updateState: com.speakin.app.update.UpdateUiState = com.speakin.app.update.UpdateUiState()
 )
 
 @HiltViewModel
 class AboutViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val configRepo: ModelConfigRepository
+    private val configRepo: ModelConfigRepository,
+    private val updateChecker: UpdateChecker
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AboutUiState())
@@ -59,6 +65,13 @@ class AboutViewModel @Inject constructor(
             llmModelType = configRepo.getLlmModelType(),
             hasCustomConfig = configRepo.hasCustomConfig()
         )
+
+        // Observe update checker state
+        viewModelScope.launch {
+            updateChecker.updateState.collect { updateState ->
+                _uiState.update { it.copy(updateState = updateState) }
+            }
+        }
     }
 
     fun updateAsrUrls(urls: String) {
@@ -134,5 +147,25 @@ class AboutViewModel @Inject constructor(
                 llmTypeSaved = true
             )
         }
+    }
+
+    // ── Update ──
+
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            updateChecker.checkForUpdate()
+        }
+    }
+
+    fun startUpdate(activity: Activity) {
+        updateChecker.startFlexibleUpdate(activity)
+    }
+
+    fun completeUpdate() {
+        updateChecker.completeUpdate()
+    }
+
+    fun openInPlayStore(activity: Activity) {
+        updateChecker.openInPlayStore(activity)
     }
 }

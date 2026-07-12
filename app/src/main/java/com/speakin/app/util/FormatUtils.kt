@@ -1,9 +1,14 @@
 package com.speakin.app.util
 
+import com.speakin.app.data.local.entity.RichSegment
+import kotlinx.serialization.json.Json
+
 /**
  * Shared formatting utilities used across the app.
  */
 object FormatUtils {
+
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
 
     /**
      * Format milliseconds as "m:ss".
@@ -25,5 +30,27 @@ object FormatUtils {
         val minutes = totalSeconds / 60
         val seconds = totalSeconds % 60
         return if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
+    }
+
+    /**
+     * Extract a plain-text preview from a note's rich-content JSON.
+     * Returns the first [maxLength] characters of concatenated segment text,
+     * or an empty string if the content is empty or unparseable.
+     */
+    fun extractContentPreview(contentJson: String?, maxLength: Int = 10): String {
+        if (contentJson.isNullOrBlank()) return ""
+        return try {
+            val segments = json.decodeFromString<List<RichSegment>>(contentJson)
+            segments.joinToString(" ") { seg ->
+                when (seg) {
+                    is RichSegment.Text -> seg.text
+                    is RichSegment.Audio -> seg.polishedText?.takeIf { it.isNotBlank() }
+                        ?: seg.transcription?.takeIf { it.isNotBlank() } ?: ""
+                    is RichSegment.Image -> seg.altText
+                }
+            }.trim().take(maxLength)
+        } catch (_: Exception) {
+            ""
+        }
     }
 }

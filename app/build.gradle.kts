@@ -126,6 +126,10 @@ dependencies {
     // Coil (image loading)
     implementation(libs.coil.compose)
 
+    // Play In-App Update
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
+
     // Kotlinx Serialization
     implementation(libs.kotlinx.serialization.json)
 

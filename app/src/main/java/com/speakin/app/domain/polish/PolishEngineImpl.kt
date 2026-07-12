@@ -27,15 +27,18 @@ class PolishEngineImpl @Inject constructor(
             return
         }
 
+        // LLM 模型未下载时直接返回原文，避免无意义的跨进程调用
+        val modelFile = modelManager.getModelFile()
+        if (!modelFile.exists()) {
+            Log.d(TAG, "LLM model not downloaded, skipping polish")
+            callback.onResult(text)
+            return
+        }
+
         scope.launch {
             try {
                 modelService.bind()
-
-                // 确保 LLM 已加载（模型路径由 ModelManager 管理）
-                val modelFile = modelManager.getModelFile()
-                if (modelFile.exists()) {
-                    modelService.loadLlm(modelFile)
-                }
+                modelService.loadLlm(modelFile)
 
                 val result = modelService.complete(
                     "请润色以下文字，修正标点和语病，使其更通顺自然。直接输出润色结果，不要添加任何额外说明。\n\n$text"

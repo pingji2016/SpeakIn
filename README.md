@@ -153,13 +153,16 @@ cd SpeakIn
 4. 连接 Android 设备或启动模拟器 (API 26+)
 5. 运行 `app` 模块
 
-模型会在构建时自动打包进 APK。
+Whisper 模型会在构建时自动打包进 APK，App 首次运行时自动从 APK 解压到内部存储，无需手动推送或联网下载。
 
 > **注意：** 由于项目使用了 NDK 和 C++ 代码，首次构建可能需要较长时间。
 
-### 部署模型到设备（手动方式）
+### 部署 LLM 模型到设备（手动方式）
 
-如果需要在已安装的 APK 上单独更新模型：
+Whisper ASR 模型已内置在 APK 中，安装即用。以下手动推送方式仅适用于：
+
+- **LLM 润色模型**：体积较大（~400MB），未打包进 APK，需单独推送或通过 App 内下载
+- **更新模型**：在已安装的 APK 上单独更新模型文件，无需重新安装
 
 ```bash
 # 创建模型目录
@@ -175,13 +178,17 @@ adb push whisper_models/tokenizer.json /data/data/com.speakin.app/files/whisper/
 adb push llm_models/qwen3-0.6b-q4_k_m.gguf /data/data/com.speakin.app/files/models/
 ```
 
+> 💡 LLM 模型也可通过 App 内 **设置页面 → 下载润色模型** 从网络下载，无需 adb 推送。
+>
+> LLM 模型未部署时，语音转写仍可正常使用，仅文本润色功能会安静跳过（返回原文）。
+
 ## 📱 功能展示
 
 ### 当前已实现
 
 - ✅ 语音录制与回放 (MediaRecorder + ExoPlayer)
-- ✅ 离线语音转文字 (ExecuTorch + Whisper tiny)
-- ✅ 本地 AI 润色 (llama.cpp + Qwen3-0.6B)
+- ✅ 离线语音转文字 (ExecuTorch + Whisper tiny) — 模型内置 APK，开箱即用
+- ✅ 本地 AI 润色 (llama.cpp + Qwen3-0.6B) — 需额外下载 LLM 模型
 - ✅ 笔记列表与详情 (Room + Compose)
 - ✅ 分段录音管理
 - ✅ 模型下载与管理
