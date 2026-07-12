@@ -5,12 +5,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +27,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
@@ -47,7 +40,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,8 +89,8 @@ fun NoteDetailScreen(
     viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showAddMenu by remember { mutableStateOf(false) }
     var fullscreenImagePath by remember { mutableStateOf<String?>(null) }
+    var focusSegmentIndex by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -195,33 +187,6 @@ fun NoteDetailScreen(
                     )
                 )
             },
-            floatingActionButton = {
-                if (!uiState.isRecording) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        FanArcMenu(
-                            expanded = showAddMenu,
-                            onToggle = { showAddMenu = !showAddMenu },
-                            onAddText = {
-                                val updated = uiState.segments.toMutableList()
-                                updated.add(RichSegment.Text(""))
-                                viewModel.onSegmentsChanged(updated)
-                                showAddMenu = false
-                            },
-                            onAddImage = {
-                                imagePickerLauncher.launch("image/*")
-                                showAddMenu = false
-                            },
-                            onAddVoice = {
-                                showAddMenu = false
-                                requestMicThenRecord()
-                            }
-                        )
-                    }
-                }
-            },
             bottomBar = {
                 RecordingBar(
                     isRecording = uiState.isRecording,
@@ -229,7 +194,16 @@ fun NoteDetailScreen(
                     onStopRecording = { viewModel.stopRecording() },
                     liveCaption = uiState.liveCaption,
                     liveCaptionStableLen = uiState.liveCaptionStableLen,
-                    isTranscribing = uiState.isTranscribing
+                    isTranscribing = uiState.isTranscribing,
+                    onAddText = {
+                        val updated = uiState.segments.toMutableList()
+                        updated.add(RichSegment.Text(""))
+                        viewModel.onSegmentsChanged(updated)
+                        focusSegmentIndex = updated.size - 1
+                    },
+                    onAddImage = {
+                        imagePickerLauncher.launch("image/*")
+                    }
                 )
             }
         ) { padding ->
@@ -685,82 +659,6 @@ private fun AudioSegmentView(
 // ═══════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════
-// Fan Arc Menu — fan-shaped radial menu for insert actions
-// ═══════════════════════════════════════════════════════════════
-
-@Composable
-private fun FanArcMenu(
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    onAddText: () -> Unit,
-    onAddImage: () -> Unit,
-    onAddVoice: () -> Unit
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Menu items — appear above the main FAB when expanded
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.5f, animationSpec = tween(200)),
-            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.5f, animationSpec = tween(150))
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(bottom = 12.dp)
-            ) {
-                MenuItem(label = stringResource(R.string.add_image), icon = Icons.Default.Image, onClick = onAddImage)
-                MenuItem(label = stringResource(R.string.add_text), icon = Icons.Default.TextFields, onClick = onAddText)
-                MenuItem(label = stringResource(R.string.add_voice), icon = Icons.Default.Mic, onClick = onAddVoice)
-            }
-        }
-
-        // Main FAB
-        FloatingActionButton(
-            onClick = onToggle,
-            containerColor = MaterialTheme.colorScheme.secondary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(
-                if (expanded) Icons.Default.Close else Icons.Default.Add,
-                contentDescription = stringResource(R.string.add_block),
-                modifier = Modifier.size(24.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun MenuItem(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Card(
-            shape = RoundedCornerShape(8.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(10.dp))
-        FloatingActionButton(
-            onClick = onClick,
-            containerColor = MaterialTheme.colorScheme.tertiary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = CircleShape,
-            modifier = Modifier.size(44.dp)
-        ) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
-        }
-    }
-}
 
 /** Build an AnnotatedString with formatting spans for display/editing. */
 private fun buildAnnotatedForDisplay(

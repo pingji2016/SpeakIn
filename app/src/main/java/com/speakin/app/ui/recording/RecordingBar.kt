@@ -19,14 +19,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,9 +53,9 @@ import com.speakin.app.R
 import com.speakin.app.ui.theme.SpeakInRecording
 
 /**
- * 常住底部栏：麦克风按钮 + 实时字幕
+ * 常住底部栏：文字 / 语音 / 图片 快捷入口 + 实时字幕
  *
- * - 蓝色麦克风 = 空闲（点击开始录音）
+ * - 空闲：文字(左) + 蓝色麦克风(中) + 图片(右)
  * - 绿色脉冲麦克风 = 正在收音（点击停止录音）
  * - 录音乐时实时字幕显示在按钮上方
  */
@@ -64,6 +67,8 @@ fun RecordingBar(
     liveCaption: String = "",
     liveCaptionStableLen: Int = 0,
     isTranscribing: Boolean = false,
+    onAddText: () -> Unit = {},
+    onAddImage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -86,7 +91,7 @@ fun RecordingBar(
     val stopColor = Color(0xFFEF4444)  // 红色停止按钮
     val micGlow = micColor.copy(alpha = pulseAlpha * 0.3f)
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().navigationBarsPadding()) {
         // ─── 实时字幕卡片 ───
         // 录音中实时显示，转写中也保持最后一条字幕不消失
         AnimatedVisibility(
@@ -245,23 +250,56 @@ fun RecordingBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    // 空闲：蓝色麦克风按钮
-                    IconButton(
-                        onClick = onStartRecording,
-                        modifier = Modifier.size(56.dp)
+                    // 空闲：文字(左) + 语音(中) + 图片(右)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(micColor),
-                            contentAlignment = Alignment.Center
+                        // 文字按钮
+                        IconButton(
+                            onClick = onAddText,
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
-                                Icons.Default.Mic,
-                                contentDescription = stringResource(R.string.start_recording),
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                Icons.Default.TextFields,
+                                contentDescription = stringResource(R.string.add_text),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        // 语音按钮（蓝色圆形麦克风）
+                        IconButton(
+                            onClick = onStartRecording,
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(micColor),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = stringResource(R.string.start_recording),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        // 图片按钮
+                        IconButton(
+                            onClick = onAddImage,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Image,
+                                contentDescription = stringResource(R.string.add_image),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }

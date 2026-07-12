@@ -150,10 +150,15 @@ kapt {
 }
 
 // ============================================================
-// 模型下载任务
-// 用法: .\gradlew downloadWhisperModel   (下载 whisper ASR 模型, ~235MB)
+// 模型下载任务（仅用于本地开发/调试，默认不打包进 APK）
+//
+// 运行时模型下载优先级：CDN → HuggingFace Mirror → ModelScope
+//
+// 用法（如需打包模型到 APK）:
+//       .\gradlew downloadWhisperModel   (下载 whisper ASR 模型, ~231MB)
 //       .\gradlew downloadLlmModel       (下载 Qwen3 润色模型, ~400MB)
 //       .\gradlew downloadAllModels      (下载全部模型)
+//       .\gradlew copyModelsToBaseAssets (复制模型到 assets, 然后构建 APK)
 // ============================================================
 
 val whisperModelDir = rootProject.layout.projectDirectory.dir("whisper_models")
@@ -191,6 +196,7 @@ fun downloadWithRedirect(urlStr: String, target: File, timeoutMs: Int = 600_000)
 }
 
 val WHISPER_HF_BASE = "https://hf-mirror.com/pingji2025/whisper/resolve/main"
+val WHISPER_MS_BASE = "https://www.modelscope.cn/min0max/whisper/resolve/master"
 val WHISPER_MODEL_FILES = listOf(
     "whisper_pre_enc.pte"  to "Whisper pre-encoder (raw audio → hidden states)",
     "whisper_decoder.pte"  to "Whisper decoder (autoregressive token generation)",
@@ -199,16 +205,21 @@ val WHISPER_MODEL_FILES = listOf(
 
 tasks.register("downloadWhisperModel") {
     group = "SpeakIn"
-    description = "从 HuggingFace 下载 Whisper tiny ASR 模型 (~231 MB)"
+    description = "下载 Whisper tiny ASR 模型 (~231 MB, HF 优先, ModelScope 兜底)"
 
     doLast {
-        // 1. 下载到项目根目录 whisper_models/
+        // 下载到项目根目录 whisper_models/
         val modelDir = whisperModelDir.asFile
         modelDir.mkdirs()
 
+        // 下载源：HuggingFace 镜像 → ModelScope（自动降级）
+        val downloadSources = listOf(
+            "HuggingFace Mirror" to WHISPER_HF_BASE,
+            "ModelScope" to WHISPER_MS_BASE
+        )
+
         for ((filename, desc) in WHISPER_MODEL_FILES) {
             val target = File(modelDir, filename)
-            val url = "$WHISPER_HF_BASE/$filename"
 
             if (target.exists() && target.length() > 100_000) {
                 println("  ✅ 已存在: $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
@@ -216,11 +227,23 @@ tasks.register("downloadWhisperModel") {
             }
 
             println("  ⏳ 下载: $filename ($desc) ...")
-            try {
-                downloadWithRedirect(url, target)
-                println("  ✅ 完成: $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
-            } catch (e: Exception) {
-                throw RuntimeException("下载 $filename 失败: ${e.message}\n  请确认 HuggingFace 仓库已上传且 WHISPER_HF_BASE 配置正确", e)
+            var success = false
+            for ((sourceName, baseUrl) in downloadSources) {
+                try {
+                    val url = "$baseUrl/$filename"
+                    downloadWithRedirect(url, target)
+                    println("  ✅ 完成 ($sourceName): $filename (${"%.1f".format(target.length() / 1024.0 / 1024.0)} MB)")
+                    success = true
+                    break
+                } catch (e: Exception) {
+                    println("  ⚠️  $sourceName 下载失败: ${e.message}, 尝试下一个源...")
+                }
+            }
+            if (!success) {
+                throw RuntimeException(
+                    "下载 $filename 失败: 所有下载源均不可用\n" +
+                    "  请确认 HuggingFace 和 ModelScope 仓库已上传"
+                )
             }
         }
 
@@ -228,8 +251,8 @@ tasks.register("downloadWhisperModel") {
         println("=".repeat(60))
         println("  ✅ Whisper 模型已下载到 whisper_models/")
         println()
-        println("  本地调试 APK：.\\gradlew :app:assembleDebug")
-        println("  发布 AAB：    .\\gradlew :app:bundleRelease")
+        println("  注意：默认 APK 构建不打包模型文件（运行时从网络下载）")
+        println("  如需打包进 APK，先执行此任务，再构建：.\\gradlew :app:assembleDebug")
         println("=".repeat(60))
     }
 }
@@ -273,10 +296,10 @@ tasks.register("downloadAllModels") {
     dependsOn("downloadWhisperModel", "downloadLlmModel")
 }
 
-// ── 复制模型到 base assets（仅供本地调试 APK 使用） ──
+// ── 复制模型到 base assets（仅供本地调试 & CI APK 使用） ──
 tasks.register<Copy>("copyModelsToBaseAssets") {
     group = "SpeakIn"
-    description = "复制 whisper 模型到 app/src/main/assets/（本地调试 APK）"
+    description = "复制 whisper 模型到 app/src/main/assets/（调试 APK / GitHub Release）"
 
     val srcDir = whisperModelDir.asFile
     val dstDir = file("src/main/assets/models/whisper")
@@ -286,20 +309,23 @@ tasks.register<Copy>("copyModelsToBaseAssets") {
     }
     into(dstDir)
 
+    // CI 环境没有预下载模型，先下载再复制
+    dependsOn("downloadWhisperModel")
+
     doFirst {
         dstDir.mkdirs()
         println("Copying model files to base assets: ${dstDir.absolutePath}")
     }
 
     doLast {
-        println("Model files copied to base assets (for debug APK).")
+        println("Model files copied to base assets (for debug APK / GitHub Release).")
     }
 }
 
 // ── 复制模型到 asset pack（用于 AAB 发布构建） ──
 tasks.register<Copy>("copyModelsToAssetPack") {
     group = "SpeakIn"
-    description = "复制 whisper 模型到 speakin_assets asset pack（AAB 发布）"
+    description = "复制 whisper 模型到 speakin_assets asset pack（AAB 发布 Google Play）"
 
     val srcDir = whisperModelDir.asFile
     val dstDir = rootProject.layout.projectDirectory.dir("speakin_assets/src/main/assets/models/whisper").asFile
@@ -309,27 +335,33 @@ tasks.register<Copy>("copyModelsToAssetPack") {
     }
     into(dstDir)
 
+    // CI 环境没有预下载模型，先下载再复制
+    dependsOn("downloadWhisperModel")
+
     doFirst {
         dstDir.mkdirs()
         println("Copying model files to asset pack: ${dstDir.absolutePath}")
     }
 
     doLast {
-        println("Model files copied to asset pack (for AAB).")
+        println("Model files copied to asset pack (for AAB / Google Play).")
     }
 }
 
-// ── 自动依赖：调试构建从 base assets 取模型，发布构建从 asset pack 取 ──
+// ── 模型获取策略 ──
+// 默认：模型文件不打包进 APK，运行时从网络下载（保持 APK 体积小）。
+// 下载优先级：cdn.speakin.app → hf-mirror.com → modelscope.cn
+//
+// 如需将模型打包进 APK（例如离线发布），执行以下步骤：
+//   1. .\gradlew downloadWhisperModel    ← 先下载模型到本地
+//   2. .\gradlew copyModelsToBaseAssets   ← 复制到 assets/
+//   3. .\gradlew :app:assembleDebug       ← 构建 APK（含模型）
+// ============================================================
 afterEvaluate {
-    // 调试 APK：自动复制模型到 base assets
-    tasks.matching { it.name == "mergeDebugAssets" }
-        .configureEach { dependsOn("copyModelsToBaseAssets") }
-
-    // 发布 AAB：自动复制模型到 asset pack（不走 base assets，避免超过 200MB 限制）
-    tasks.matching { it.name == "bundleRelease" || it.name == "bundleDebug" }
-        .configureEach { dependsOn("copyModelsToAssetPack") }
-
-    // Asset pack 打包前需要先复制模型文件
-    tasks.matching { it.name.startsWith("assetPack") && it.name.endsWith("PreBundleTask") }
-        .configureEach { dependsOn("copyModelsToAssetPack") }
+    // 默认关闭模型打包，保持 APK 体积小。
+    // 如需恢复打包，取消下面两行的注释。
+    // tasks.matching { it.name in setOf("mergeDebugAssets", "mergeReleaseAssets") }
+    //     .configureEach { dependsOn("copyModelsToBaseAssets") }
+    // tasks.matching { it.name == "bundleRelease" || it.name == "bundleDebug" }
+    //     .configureEach { dependsOn("copyModelsToAssetPack") }
 }

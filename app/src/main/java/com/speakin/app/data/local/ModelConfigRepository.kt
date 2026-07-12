@@ -130,10 +130,11 @@ class ModelConfigRepository @Inject constructor(
             "qwen3-0.6b-q8_0.gguf"
         )
 
-        /** 内置默认 ASR 下载地址 */
+        /** 内置默认 ASR 下载地址（按优先级排列，网络下载时依次尝试） */
         val DEFAULT_ASR_URLS = listOf(
             "https://cdn.speakin.app/models/whisper-tiny/v1",
-            "https://hf-mirror.com/SpeakIn/whisper-tiny/resolve/main"
+            "https://hf-mirror.com/SpeakIn/whisper-tiny/resolve/main",
+            "https://www.modelscope.cn/min0max/whisper/resolve/master"
         )
 
         /** 内置默认 LLM 下载地址 */
