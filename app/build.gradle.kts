@@ -8,6 +8,8 @@ plugins {
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.kotlinx.serialization)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics.plugin)
 }
 
 // ── 签名配置 ──
@@ -115,10 +117,10 @@ dependencies {
     // Navigation
     implementation(libs.navigation.compose)
 
-    // Firebase (reserved for future use)
-    // implementation(platform(libs.firebase.bom))
-    // implementation(libs.firebase.analytics)
-    // implementation(libs.firebase.crashlytics)
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
 
     // ExoPlayer
     implementation(libs.exoplayer.core)
