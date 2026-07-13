@@ -59,6 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -299,6 +301,8 @@ fun NoteDetailScreen(
                             isInitialEmpty = uiState.segments.isEmpty(),
                             playingAudioPath = uiState.playingAudioPath,
                             transcribeError = uiState.transcribeError,
+                            focusSegmentIndex = focusSegmentIndex,
+                            onFocusDone = { focusSegmentIndex = null },
                             onSegmentsChanged = { viewModel.onSegmentsChanged(it) },
                             onImageClick = { fullscreenImagePath = it },
                             onAudioPlayPause = { path, play ->
@@ -324,12 +328,21 @@ private fun RichContentArea(
     isInitialEmpty: Boolean = false,
     playingAudioPath: String?,
     transcribeError: String?,
+    focusSegmentIndex: Int? = null,
+    onFocusDone: () -> Unit = {},
     onSegmentsChanged: (List<RichSegment>) -> Unit,
     onImageClick: (String) -> Unit,
     onAudioPlayPause: (String, Boolean) -> Unit,
     onDeleteSegment: (Int) -> Unit
 ) {
     val scrollState = rememberScrollState()
+
+    // Auto-scroll to bottom when a new segment is added
+    LaunchedEffect(segments.size) {
+        if (segments.isNotEmpty()) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -384,7 +397,9 @@ private fun RichContentArea(
                     onDelete = {
                         if (!isInitialEmpty) onDeleteSegment(index)
                     },
-                    showDelete = !isInitialEmpty || segments.size > 1
+                    showDelete = !isInitialEmpty || segments.size > 1,
+                    requestFocus = index == focusSegmentIndex,
+                    onFocusRequested = onFocusDone
                 )
                 is RichSegment.Image -> ImageSegmentView(
                     imagePath = segment.imagePath,
@@ -421,8 +436,11 @@ private fun EditableTextSegment(
     spans: List<SpanInfo>,
     onTextChanged: (String) -> Unit,
     onDelete: () -> Unit,
-    showDelete: Boolean = true
+    showDelete: Boolean = true,
+    requestFocus: Boolean = false,
+    onFocusRequested: () -> Unit = {}
 ) {
+    val focusRequester = remember { FocusRequester() }
     var textFieldValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -439,6 +457,14 @@ private fun EditableTextSegment(
                 annotatedString = buildAnnotatedForDisplay(text, spans),
                 selection = TextRange(text.length)
             )
+        }
+    }
+
+    // Request focus when this segment is newly added
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) {
+            focusRequester.requestFocus()
+            onFocusRequested()
         }
     }
 
@@ -462,7 +488,9 @@ private fun EditableTextSegment(
             cursorBrush = androidx.compose.ui.graphics.SolidColor(
                 MaterialTheme.colorScheme.primary
             ),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
             minLines = 1
         )
         if (showDelete) {
