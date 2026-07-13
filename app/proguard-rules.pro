@@ -33,3 +33,12 @@
 # Keep Kotlin coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# ── Firebase ──
+# Keep Firebase SDK classes (required for reflection-based init)
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.internal.** { *; }
+-dontwarn com.google.firebase.**
+-dontwarn com.google.android.gms.**
+# Keep Google Services generated config
+-keep class com.google.firebase.provider.** { *; }
