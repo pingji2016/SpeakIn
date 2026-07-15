@@ -232,8 +232,3 @@ adb push llm_models/qwen3-0.6b-q4_k_m.gguf /data/data/com.speakin.app/files/mode
 <div align="center">
   <sub>Built with ❤️ for privacy-first voice note taking</sub>
 </div>
-
-1， 声音编辑，导出，等
-2，变声器？
-3，按钮可拖动
-4， llm 模型可配置远端，一键润色，声网sdk?
