@@ -70,6 +70,22 @@ class NoteRepository @Inject constructor(
     }
 
     /**
+     * 更新指定音频段的文件路径与时长（音频编辑器裁剪保存后调用）。
+     * transcription/polishedText 保留不变。
+     */
+    suspend fun updateAudioSegment(
+        noteId: String,
+        segmentIndex: Int,
+        newPath: String,
+        newDurationMs: Long
+    ) {
+        val segments = getContentOnce(noteId)?.toMutableList() ?: return
+        val segment = segments.getOrNull(segmentIndex) as? RichSegment.Audio ?: return
+        segments[segmentIndex] = segment.copy(audioPath = newPath, durationMs = newDurationMs)
+        saveContent(noteId, segments)
+    }
+
+    /**
      * 将旧版 content_blocks 表数据转换为 RichSegment 列表并保存到 contentJson。
      * 仅在 note.contentJson 为 null 时调用，迁移后不再重复。
      */

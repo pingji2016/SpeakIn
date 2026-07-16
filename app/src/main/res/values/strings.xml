@@ -94,6 +94,18 @@
     <!-- Streaming ASR / Live Caption -->
     <string name="live_preview">Live · may change</string>
 
+    <!-- Audio Editor -->
+    <string name="audio_editor">Audio Editor</string>
+    <string name="trim">Trim</string>
+    <string name="save_trim">Save</string>
+    <string name="export_audio">Export audio</string>
+    <string name="preview">Preview</string>
+    <string name="trim_start">Start</string>
+    <string name="trim_end">End</string>
+    <string name="audio_editor_load_error">Could not load audio</string>
+    <string name="audio_export_failed">Export failed</string>
+    <string name="edit_audio">Edit audio</string>
+
     <!-- ASR Model Download -->
     <string name="asr_model_download_title">Download Speech Recognition</string>
     <string name="asr_model_download_desc">Download ~180MB once, then use offline forever</string>

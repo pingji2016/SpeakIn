@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 音频导出临时目录 -->
+    <cache-path name="exports" path="exports/" />
+</paths>

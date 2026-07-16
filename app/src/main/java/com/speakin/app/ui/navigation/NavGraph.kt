@@ -11,6 +11,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.speakin.app.ui.about.AboutScreen
+import com.speakin.app.ui.audioeditor.AudioEditorScreen
 import com.speakin.app.ui.notedetail.NoteDetailScreen
 import com.speakin.app.ui.notelist.NoteListScreen
 import com.speakin.app.ui.settings.SettingsScreen
@@ -67,8 +68,24 @@ fun SpeakInNavGraph(
             arguments = listOf(
                 navArgument("noteId") { type = NavType.StringType }
             )
-        ) {
+        ) { backStackEntry ->
+            val noteId = backStackEntry.arguments?.getString("noteId").orEmpty()
             NoteDetailScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAudioEditor = { segmentIndex ->
+                    navController.navigate(Routes.audioEditor(noteId, segmentIndex))
+                }
+            )
+        }
+
+        composable(
+            route = Routes.AUDIO_EDITOR,
+            arguments = listOf(
+                navArgument("noteId") { type = NavType.StringType },
+                navArgument("segmentIndex") { type = NavType.IntType }
+            )
+        ) {
+            AudioEditorScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

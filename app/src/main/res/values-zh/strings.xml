@@ -49,6 +49,18 @@
     <!-- Streaming ASR / Live Caption -->
     <string name="live_preview">实时 · 可能变化</string>
 
+    <!-- Audio Editor -->
+    <string name="audio_editor">音频编辑</string>
+    <string name="trim">裁剪</string>
+    <string name="save_trim">保存裁剪</string>
+    <string name="export_audio">导出音频</string>
+    <string name="preview">预览</string>
+    <string name="trim_start">起点</string>
+    <string name="trim_end">终点</string>
+    <string name="audio_editor_load_error">无法加载音频</string>
+    <string name="audio_export_failed">导出失败</string>
+    <string name="edit_audio">编辑音频</string>
+
     <!-- ASR Model Download -->
     <string name="asr_model_download_title">下载语音识别模型</string>
     <string name="asr_model_download_desc">下载 ~180MB，一次下载永久离线使用</string>

@@ -5,8 +5,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,10 +86,11 @@ import com.speakin.app.ui.theme.SpeakInRecording
 import com.speakin.app.util.FormatUtils
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteDetailScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToAudioEditor: (Int) -> Unit = {},
     viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -309,7 +312,11 @@ fun NoteDetailScreen(
                                 if (play) viewModel.onPlaybackStarted(path)
                                 else viewModel.onPlaybackStopped()
                             },
-                            onDeleteSegment = { viewModel.deleteSegment(it) }
+                            onDeleteSegment = { viewModel.deleteSegment(it) },
+                            onEditAudio = { index ->
+                                viewModel.onPlaybackStopped()
+                                onNavigateToAudioEditor(index)
+                            }
                         )
                     }
                 }
@@ -333,7 +340,8 @@ private fun RichContentArea(
     onSegmentsChanged: (List<RichSegment>) -> Unit,
     onImageClick: (String) -> Unit,
     onAudioPlayPause: (String, Boolean) -> Unit,
-    onDeleteSegment: (Int) -> Unit
+    onDeleteSegment: (Int) -> Unit,
+    onEditAudio: (Int) -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -416,7 +424,8 @@ private fun RichContentArea(
                     onPlayPause = { play ->
                         onAudioPlayPause(segment.audioPath, play)
                     },
-                    onDelete = { onDeleteSegment(index) }
+                    onDelete = { onDeleteSegment(index) },
+                    onLongPress = { onEditAudio(index) }
                 )
             }
         }
@@ -580,6 +589,7 @@ private fun ImageSegmentView(
 // Audio Segment View
 // ═══════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AudioSegmentView(
     audioPath: String,
@@ -588,7 +598,8 @@ private fun AudioSegmentView(
     polishedText: String?,
     isPlaying: Boolean,
     onPlayPause: (Boolean) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onLongPress: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
     val label = polishedText?.takeIf { it.isNotBlank() }
@@ -604,7 +615,10 @@ private fun AudioSegmentView(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
+                .combinedClickable(
+                    onClick = { expanded = !expanded },
+                    onLongClick = onLongPress
+                )
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
