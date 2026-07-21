@@ -67,6 +67,20 @@ android {
         }
     }
 
+    // ── 构建变体：online vs offline ──
+    // online  (default): 模型运行时从网络下载，APK 体积小 (~30MB)
+    // offline:            模型预打包进 APK，无需网络即可使用 (~260MB)
+    flavorDimensions += "model"
+    productFlavors {
+        create("online") {
+            dimension = "model"
+            buildConfigField("boolean", "MODEL_BUNDLED", "false")
+        }
+        create("offline") {
+            dimension = "model"
+            buildConfigField("boolean", "MODEL_BUNDLED", "true")
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -77,6 +91,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Play Asset Delivery
@@ -152,15 +167,20 @@ kapt {
 }
 
 // ============================================================
-// 模型下载任务（仅用于本地开发/调试，默认不打包进 APK）
+// 模型下载任务
 //
-// 运行时模型下载优先级：CDN → HuggingFace Mirror → ModelScope
+// 两个构建变体 (Build Variants):
+//   online  — 模型运行时下载（默认，APK ~30MB）
+//             .\gradlew :app:assembleOnlineDebug
+//             .\gradlew :app:assembleOnlineRelease
+//   offline — 模型预打包进 APK（首次启动无需下载，APK ~260MB）
+//             .\gradlew :app:assembleOfflineDebug
+//             .\gradlew :app:assembleOfflineRelease
 //
-// 用法（如需打包模型到 APK）:
+// 手动下载模型文件（调试用）:
 //       .\gradlew downloadWhisperModel   (下载 whisper ASR 模型, ~231MB)
 //       .\gradlew downloadLlmModel       (下载 Qwen3 润色模型, ~400MB)
 //       .\gradlew downloadAllModels      (下载全部模型)
-//       .\gradlew copyModelsToBaseAssets (复制模型到 assets, 然后构建 APK)
 // ============================================================
 
 val whisperModelDir = rootProject.layout.projectDirectory.dir("whisper_models")
@@ -351,19 +371,21 @@ tasks.register<Copy>("copyModelsToAssetPack") {
 }
 
 // ── 模型获取策略 ──
-// 默认：模型文件不打包进 APK，运行时从网络下载（保持 APK 体积小）。
-// 下载优先级：cdn.speakin.app → hf-mirror.com → modelscope.cn
+// online  variant: 模型运行时从网络下载（APK 体积小），优先级 CDN → hf-mirror → ModelScope
+// offline variant: 模型预打包进 APK/assets，首次启动自动解压，无需网络
 //
-// 如需将模型打包进 APK（例如离线发布），执行以下步骤：
-//   1. .\gradlew downloadWhisperModel    ← 先下载模型到本地
-//   2. .\gradlew copyModelsToBaseAssets   ← 复制到 assets/
-//   3. .\gradlew :app:assembleDebug       ← 构建 APK（含模型）
+// 手动触发（仅 online variant 需要手动打包模型）:
+//       .\gradlew downloadWhisperModel       (下载 whisper ASR 模型, ~231MB)
+//       .\gradlew copyModelsToBaseAssets     (复制模型到 assets, 然后构建 APK)
 // ============================================================
 afterEvaluate {
-    // 默认关闭模型打包，保持 APK 体积小。
-    // 如需恢复打包，取消下面两行的注释。
-    // tasks.matching { it.name in setOf("mergeDebugAssets", "mergeReleaseAssets") }
-    //     .configureEach { dependsOn("copyModelsToBaseAssets") }
-    // tasks.matching { it.name == "bundleRelease" || it.name == "bundleDebug" }
-    //     .configureEach { dependsOn("copyModelsToAssetPack") }
+    // offline variant: 自动下载并打包模型文件到 APK/AAB
+    tasks.configureEach {
+        when (name) {
+            "mergeOfflineDebugAssets", "mergeOfflineReleaseAssets" ->
+                dependsOn("copyModelsToBaseAssets")
+            "bundleOfflineDebug", "bundleOfflineRelease" ->
+                dependsOn("copyModelsToAssetPack")
+        }
+    }
 }

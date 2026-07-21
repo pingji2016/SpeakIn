@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -671,27 +672,47 @@ private fun AudioSegmentView(
         }
 
         // Expandable transcription details
-        if (expanded && (transcription != null || polishedText != null)) {
+        if (expanded) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
                     .padding(bottom = 10.dp)
             ) {
-                if (!transcription.isNullOrEmpty()) {
-                    Text(
-                        text = transcription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                if (!polishedText.isNullOrEmpty() && polishedText != transcription) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = polishedText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                if (transcription.isNullOrEmpty() && polishedText.isNullOrEmpty()) {
+                    // Model not ready / transcription unavailable
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Transcription unavailable · download ASR model in Settings",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                } else {
+                    if (!transcription.isNullOrEmpty()) {
+                        Text(
+                            text = transcription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (!polishedText.isNullOrEmpty() && polishedText != transcription) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = polishedText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
                 }
             }
         }

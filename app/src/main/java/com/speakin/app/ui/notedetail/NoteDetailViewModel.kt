@@ -226,16 +226,7 @@ class NoteDetailViewModel @Inject constructor(
                 Triple(rawText, polishedText, errorMsg)
             }
 
-            if (errorMsg != null && rawText.isBlank()) {
-                _uiState.value = _uiState.value.copy(
-                    isTranscribing = false,
-                    transcribeError = errorMsg
-                )
-                streamingSession = null
-                return@launch
-            }
-
-            // Insert audio segment into content
+            // Always save audio segment, even without transcription (model may be unavailable)
             val currentSegments = _uiState.value.segments.toMutableList()
             currentSegments.add(
                 RichSegment.Audio(
@@ -248,7 +239,8 @@ class NoteDetailViewModel @Inject constructor(
             repository.saveContent(noteId, currentSegments)
             _uiState.value = _uiState.value.copy(
                 segments = currentSegments,
-                isTranscribing = false
+                isTranscribing = false,
+                transcribeError = if (errorMsg != null && rawText.isBlank()) errorMsg else null
             )
             streamingSession = null
         }
