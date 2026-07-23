@@ -25,6 +25,7 @@
     <string name="add_block">添加内容</string>
     <string name="add_voice">语音</string>
     <string name="add_text">文字</string>
+    <string name="add_audio">导入音频</string>
     <string name="add_image">图片</string>
     <string name="image_caption">添加描述…</string>
     <string name="text_placeholder">输入文字…</string>

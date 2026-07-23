@@ -11,8 +11,10 @@ import com.speakin.app.di.AudioDir
 import com.speakin.app.di.ImageDir
 import com.speakin.app.domain.asr.AsrEngine
 import com.speakin.app.domain.asr.StreamingAsrSession
+import com.speakin.app.domain.audio.AudioDecoder
 import com.speakin.app.domain.audio.AudioPlayer
 import com.speakin.app.domain.audio.AudioRecorder
+import com.speakin.app.domain.audio.WavFile
 import com.speakin.app.domain.llm.ModelManager
 import com.speakin.app.domain.llm.ModelState
 import com.speakin.app.domain.model.AsrModelManager
@@ -195,36 +197,7 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch {
             asrModelManager.ensureModelAvailable()
 
-            // Transcribe + polish on IO thread
-            val (rawText, polishResult, errorMsg) = withContext(Dispatchers.IO) {
-                var errorMsg: String? = null
-
-                // Transcribe
-                val transcribeSignal = kotlinx.coroutines.CompletableDeferred<String>()
-                asrEngine.transcribe(file, object : AsrEngine.Callback {
-                    override fun onResult(text: String) { transcribeSignal.complete(text) }
-                    override fun onProgress(progress: Float) {}
-                    override fun onError(error: String) {
-                        errorMsg = error
-                        transcribeSignal.complete("")
-                    }
-                })
-                val rawText = transcribeSignal.await()
-
-                // Polish
-                var polishedText: String? = null
-                if (rawText.isNotBlank()) {
-                    val polishSignal = kotlinx.coroutines.CompletableDeferred<String>()
-                    polishEngine.polish(rawText, object : PolishEngine.Callback {
-                        override fun onResult(text: String) { polishSignal.complete(text) }
-                        override fun onError(error: String) { polishSignal.complete(rawText) }
-                    })
-                    polishedText = polishSignal.await()
-                    if (polishedText == rawText) polishedText = null
-                }
-
-                Triple(rawText, polishedText, errorMsg)
-            }
+            val (rawText, polishResult, errorMsg) = transcribeFile(file)
 
             // Always save audio segment, even without transcription (model may be unavailable)
             val currentSegments = _uiState.value.segments.toMutableList()
@@ -284,6 +257,135 @@ class NoteDetailViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(segments = currentSegments)
         }
     }
+
+    // ─── Audio Import ───────────────────────────────────
+
+    /**
+     * 导入外部音频文件。
+     * 自动检测 WAV 格式，非 WAV 文件通过 MediaCodec 解码后转写。
+     *
+     * @param tempFile 临时文件（已从 URI 复制到缓存目录）
+     */
+    fun importAudio(tempFile: File) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isTranscribing = true, transcribeError = null)
+
+                val (audioFile, durationMs) = withContext(Dispatchers.IO) {
+                    // 复制到音频目录
+                    val isWav = try {
+                        WavFile.read(tempFile)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+
+                    if (isWav) {
+                        // WAV 文件直接使用
+                        val dest = File(audioOutputDir, "import_${UUID.randomUUID()}.wav")
+                        tempFile.copyTo(dest, overwrite = true)
+                        tempFile.delete()
+                        val wavData = WavFile.read(dest)
+                        Pair(dest, wavData.durationMs)
+                    } else {
+                        // 非 WAV → 解码为 16kHz 单声道 WAV
+                        val decoded = File(audioOutputDir, "import_${UUID.randomUUID()}.wav")
+                        val success = AudioDecoder.decodeToWav(tempFile, decoded)
+                        if (success) {
+                            tempFile.delete()
+                            val wavData = WavFile.read(decoded)
+                            Pair(decoded, wavData.durationMs)
+                        } else {
+                            // 解码失败，保留原文件（仍可播放，但无法转写）
+                            val ext = tempFile.extension.ifEmpty { "m4a" }
+                            val dest = File(audioOutputDir, "import_${UUID.randomUUID()}.$ext")
+                            tempFile.copyTo(dest, overwrite = true)
+                            tempFile.delete()
+                            val dur = AudioDecoder.getDurationMs(dest)
+                            Pair(dest, dur)
+                        }
+                    }
+                }
+
+                // 添加音频段到笔记
+                val currentSegments = _uiState.value.segments.toMutableList()
+                val segmentIndex = currentSegments.size
+                currentSegments.add(
+                    RichSegment.Audio(
+                        audioPath = audioFile.absolutePath,
+                        durationMs = durationMs,
+                        transcription = null,
+                        polishedText = null
+                    )
+                )
+                repository.saveContent(noteId, currentSegments)
+                _uiState.value = _uiState.value.copy(segments = currentSegments)
+
+                // 转写 + 润色
+                asrModelManager.ensureModelAvailable()
+                val (rawText, polishResult, errorMsg) = transcribeFile(audioFile)
+
+                // 更新段中的转写结果
+                val updatedSegments = _uiState.value.segments.toMutableList()
+                val seg = updatedSegments.getOrNull(segmentIndex) as? RichSegment.Audio
+                if (seg != null) {
+                    updatedSegments[segmentIndex] = seg.copy(
+                        transcription = rawText.ifBlank { null },
+                        polishedText = polishResult
+                    )
+                    repository.saveContent(noteId, updatedSegments)
+                    _uiState.value = _uiState.value.copy(
+                        segments = updatedSegments,
+                        isTranscribing = false,
+                        transcribeError = if (errorMsg != null && rawText.isBlank()) errorMsg else null
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isTranscribing = false)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to import audio", e)
+                _uiState.value = _uiState.value.copy(
+                    isTranscribing = false,
+                    transcribeError = e.message ?: "Import failed"
+                )
+            }
+        }
+    }
+
+    /**
+     * 转写音频文件并润色文本。
+     * @return Triple(rawText, polishedText?, errorMsg?)
+     */
+    private suspend fun transcribeFile(file: File): Triple<String, String?, String?> =
+        withContext(Dispatchers.IO) {
+            var errorMsg: String? = null
+
+            // Transcribe
+            val transcribeSignal = kotlinx.coroutines.CompletableDeferred<String>()
+            asrEngine.transcribe(file, object : AsrEngine.Callback {
+                override fun onResult(text: String) { transcribeSignal.complete(text) }
+                override fun onProgress(progress: Float) {}
+                override fun onError(error: String) {
+                    errorMsg = error
+                    transcribeSignal.complete("")
+                }
+            })
+            val rawText = transcribeSignal.await()
+
+            // Polish
+            var polishedText: String? = null
+            if (rawText.isNotBlank()) {
+                val polishSignal = kotlinx.coroutines.CompletableDeferred<String>()
+                polishEngine.polish(rawText, object : PolishEngine.Callback {
+                    override fun onResult(text: String) { polishSignal.complete(text) }
+                    override fun onError(error: String) { polishSignal.complete(rawText) }
+                })
+                polishedText = polishSignal.await()
+                if (polishedText == rawText) polishedText = null
+            }
+
+            Triple(rawText, polishedText, errorMsg)
+        }
 
     // ─── Title ──────────────────────────────────────────
 

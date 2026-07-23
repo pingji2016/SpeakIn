@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
@@ -69,6 +70,7 @@ fun RecordingBar(
     isTranscribing: Boolean = false,
     onAddText: () -> Unit = {},
     onAddImage: () -> Unit = {},
+    onImportAudio: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -250,7 +252,7 @@ fun RecordingBar(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    // 空闲：文字(左) + 语音(中) + 图片(右)
+                    // 空闲：文字(左) + 导入音频 + 语音(中) + 图片(右)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -264,6 +266,19 @@ fun RecordingBar(
                             Icon(
                                 Icons.Default.TextFields,
                                 contentDescription = stringResource(R.string.add_text),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        // 导入音频按钮
+                        IconButton(
+                            onClick = onImportAudio,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Audiotrack,
+                                contentDescription = stringResource(R.string.add_audio),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(26.dp)
                             )

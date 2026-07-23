@@ -18,6 +18,8 @@ import com.speakin.app.domain.audio.Waveform
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -199,7 +201,7 @@ class AudioEditorViewModel @Inject constructor(
         }
     }
 
-    /** 导出当前选区为 M4A（AAC），完成后发出 ExportReady 事件由 UI 发起分享 */
+    /** 导出当前选区为 M4A（AAC），文件名格式为「便签名_日期时间.m4a」 */
     fun export() {
         val data = wavData ?: return
         val state = _uiState.value
@@ -213,9 +215,19 @@ class AudioEditorViewModel @Inject constructor(
                     val selection = editEngine.apply(
                         data, listOf(TrimProcessor(state.trimStartMs, state.trimEndMs))
                     )
+                    // 便签名_日期时间.m4a — 例如「会议记录_20260723_143052.m4a」
+                    val note = repository.getNoteById(noteId)
+                    val noteTitle = note?.title?.takeIf { it.isNotBlank() } ?: "note"
+                    val safeTitle = noteTitle
+                        .replace(Regex("""[\s\\/:*?"<>|]+"""), "_")
+                        .trimEnd('_')
+                        .take(60)
+                    val dateStr = LocalDateTime.now()
+                        .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                    val fileName = "${safeTitle}_${dateStr}.m4a"
                     val file = File(
                         File(context.cacheDir, "exports"),
-                        "speakin_${System.currentTimeMillis()}.m4a"
+                        fileName
                     )
                     AacEncoder.encodeToM4a(selection, file)
                     file

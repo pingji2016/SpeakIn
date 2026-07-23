@@ -111,6 +111,22 @@ fun NoteDetailScreen(
         }
     }
 
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val ext = context.contentResolver.getType(it)
+                ?.substringAfterLast("/")
+                ?.takeIf { type -> type != "*" && type.length <= 5 }
+                ?: "m4a"
+            val tempFile = File(context.cacheDir, "import_${System.currentTimeMillis()}.$ext")
+            context.contentResolver.openInputStream(it)?.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            viewModel.importAudio(tempFile)
+        }
+    }
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -209,6 +225,9 @@ fun NoteDetailScreen(
                     },
                     onAddImage = {
                         imagePickerLauncher.launch("image/*")
+                    },
+                    onImportAudio = {
+                        audioPickerLauncher.launch("audio/*")
                     }
                 )
             }

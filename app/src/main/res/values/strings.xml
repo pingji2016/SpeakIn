@@ -25,6 +25,7 @@
     <string name="add_block">Add block</string>
     <string name="add_voice">Voice</string>
     <string name="add_text">Text</string>
+    <string name="add_audio">Import Audio</string>
     <string name="add_image">Image</string>
     <string name="image_caption">Add a caption…</string>
     <string name="text_placeholder">Type something…</string>
