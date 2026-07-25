@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.repository.NoteRepository
 import com.speakin.app.di.AudioDir
@@ -98,8 +99,9 @@ class AudioEditorViewModel @Inject constructor(
     private fun loadAudio() {
         viewModelScope.launch {
             try {
-                val segments = repository.getContentOnce(noteId)
-                val segment = segments?.getOrNull(segmentIndex) as? RichSegment.Audio
+                val blocks = repository.getContentOnce(noteId)
+                val node = blocks?.getOrNull(segmentIndex) as? DocNode.Segment
+                val segment = node?.content as? RichSegment.Audio
                 if (segment == null) {
                     _uiState.update { it.copy(isLoading = false, loadError = true) }
                     return@launch

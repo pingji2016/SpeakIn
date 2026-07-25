@@ -5,6 +5,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.speakin.app.data.local.entity.NoteEntity
+import com.speakin.app.data.local.entity.ColumnData
+import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.repository.NoteRepository
 import com.speakin.app.di.AudioDir
@@ -32,7 +34,7 @@ import javax.inject.Inject
 
 data class NoteDetailUiState(
     val note: NoteEntity? = null,
-    val segments: List<RichSegment> = emptyList(),
+    val blocks: List<DocNode> = emptyList(),
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
     val playingAudioPath: String? = null,
@@ -74,9 +76,9 @@ class NoteDetailViewModel @Inject constructor(
         viewModelScope.launch {
             // Load note and migrate legacy blocks to rich content if needed
             val note = repository.getNoteById(noteId)
-            var segments: List<RichSegment> = emptyList()
+            var blocks: List<DocNode> = emptyList()
             if (note != null) {
-                segments = if (note.contentJson == null) {
+                blocks = if (note.contentJson == null) {
                     // Legacy note — convert blocks to rich segments
                     repository.migrateLegacyNoteIfNeeded(noteId) ?: emptyList()
                 } else {
@@ -85,7 +87,7 @@ class NoteDetailViewModel @Inject constructor(
             }
             _uiState.value = _uiState.value.copy(
                 note = note,
-                segments = segments,
+                blocks = blocks,
                 isLegacyFormat = false,
                 isLoading = false
             )
@@ -94,7 +96,7 @@ class NoteDetailViewModel @Inject constructor(
             repository.getNoteByIdFlow(noteId).collect { updatedNote ->
                 _uiState.value = _uiState.value.copy(
                     note = updatedNote,
-                    segments = repository.parseSegments(updatedNote?.contentJson) ?: _uiState.value.segments,
+                    blocks = repository.parseSegments(updatedNote?.contentJson) ?: _uiState.value.blocks,
                     isLoading = false
                 )
             }
@@ -113,11 +115,11 @@ class NoteDetailViewModel @Inject constructor(
 
     // ─── Content persistence ────────────────────────────
 
-    fun onSegmentsChanged(segments: List<RichSegment>) {
-        _uiState.value = _uiState.value.copy(segments = segments)
+    fun onBlocksChanged(blocks: List<DocNode>) {
+        _uiState.value = _uiState.value.copy(blocks = blocks)
         viewModelScope.launch {
             try {
-                repository.saveContent(noteId, segments)
+                repository.saveContent(noteId, blocks)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save content for note $noteId", e)
             }
@@ -200,18 +202,20 @@ class NoteDetailViewModel @Inject constructor(
             val (rawText, polishResult, errorMsg) = transcribeFile(file)
 
             // Always save audio segment, even without transcription (model may be unavailable)
-            val currentSegments = _uiState.value.segments.toMutableList()
-            currentSegments.add(
-                RichSegment.Audio(
-                    audioPath = file.absolutePath,
-                    durationMs = durationMs,
-                    transcription = rawText.ifBlank { null },
-                    polishedText = polishResult
+            val currentBlocks = _uiState.value.blocks.toMutableList()
+            currentBlocks.add(
+                DocNode.Segment(
+                    RichSegment.Audio(
+                        audioPath = file.absolutePath,
+                        durationMs = durationMs,
+                        transcription = rawText.ifBlank { null },
+                        polishedText = polishResult
+                    )
                 )
             )
-            repository.saveContent(noteId, currentSegments)
+            repository.saveContent(noteId, currentBlocks)
             _uiState.value = _uiState.value.copy(
-                segments = currentSegments,
+                blocks = currentBlocks,
                 isTranscribing = false,
                 transcribeError = if (errorMsg != null && rawText.isBlank()) errorMsg else null
             )
@@ -251,10 +255,10 @@ class NoteDetailViewModel @Inject constructor(
             val destFile = File(destDir, "img_${UUID.randomUUID()}.jpg")
             tempFile.copyTo(destFile, overwrite = true)
 
-            val currentSegments = _uiState.value.segments.toMutableList()
-            currentSegments.add(RichSegment.Image(imagePath = destFile.absolutePath))
-            repository.saveContent(noteId, currentSegments)
-            _uiState.value = _uiState.value.copy(segments = currentSegments)
+            val currentBlocks = _uiState.value.blocks.toMutableList()
+            currentBlocks.add(DocNode.Segment(RichSegment.Image(imagePath = destFile.absolutePath)))
+            repository.saveContent(noteId, currentBlocks)
+            _uiState.value = _uiState.value.copy(blocks = currentBlocks)
         }
     }
 
@@ -308,34 +312,37 @@ class NoteDetailViewModel @Inject constructor(
                 }
 
                 // 添加音频段到笔记
-                val currentSegments = _uiState.value.segments.toMutableList()
-                val segmentIndex = currentSegments.size
-                currentSegments.add(
-                    RichSegment.Audio(
-                        audioPath = audioFile.absolutePath,
-                        durationMs = durationMs,
-                        transcription = null,
-                        polishedText = null
+                val currentBlocks = _uiState.value.blocks.toMutableList()
+                val blockIndex = currentBlocks.size
+                currentBlocks.add(
+                    DocNode.Segment(
+                        RichSegment.Audio(
+                            audioPath = audioFile.absolutePath,
+                            durationMs = durationMs,
+                            transcription = null,
+                            polishedText = null
+                        )
                     )
                 )
-                repository.saveContent(noteId, currentSegments)
-                _uiState.value = _uiState.value.copy(segments = currentSegments)
+                repository.saveContent(noteId, currentBlocks)
+                _uiState.value = _uiState.value.copy(blocks = currentBlocks)
 
                 // 转写 + 润色
                 asrModelManager.ensureModelAvailable()
                 val (rawText, polishResult, errorMsg) = transcribeFile(audioFile)
 
                 // 更新段中的转写结果
-                val updatedSegments = _uiState.value.segments.toMutableList()
-                val seg = updatedSegments.getOrNull(segmentIndex) as? RichSegment.Audio
+                val updatedBlocks = _uiState.value.blocks.toMutableList()
+                val segNode = updatedBlocks.getOrNull(blockIndex) as? DocNode.Segment
+                val seg = segNode?.content as? RichSegment.Audio
                 if (seg != null) {
-                    updatedSegments[segmentIndex] = seg.copy(
+                    updatedBlocks[blockIndex] = DocNode.Segment(seg.copy(
                         transcription = rawText.ifBlank { null },
                         polishedText = polishResult
-                    )
-                    repository.saveContent(noteId, updatedSegments)
+                    ))
+                    repository.saveContent(noteId, updatedBlocks)
                     _uiState.value = _uiState.value.copy(
-                        segments = updatedSegments,
+                        blocks = updatedBlocks,
                         isTranscribing = false,
                         transcribeError = if (errorMsg != null && rawText.isBlank()) errorMsg else null
                     )
@@ -395,34 +402,182 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
-    // ─── Delete segment ─────────────────────────────────
+    // ─── Delete block ─────────────────────────────────
 
-    fun deleteSegment(index: Int) {
-        val currentSegments = _uiState.value.segments.toMutableList()
-        if (index in currentSegments.indices) {
-            val seg = currentSegments[index]
-            // Stop playback before cleanup if this segment is playing
-            if (seg is RichSegment.Audio && seg.audioPath == _uiState.value.playingAudioPath) {
-                audioPlayer.stop()
-                _uiState.value = _uiState.value.copy(playingAudioPath = null)
-            }
-            currentSegments.removeAt(index)
-            // Persist state change atomically, then clean up files
-            viewModelScope.launch {
-                _uiState.value = _uiState.value.copy(segments = currentSegments)
-                try {
-                    repository.saveContent(noteId, currentSegments)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to save after segment delete", e)
+    fun deleteBlock(index: Int) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        if (index in currentBlocks.indices) {
+            val node = currentBlocks[index]
+            // Stop playback if this block contains the playing audio
+            val playingPath = _uiState.value.playingAudioPath
+            if (playingPath != null) {
+                val nodePaths = when (node) {
+                    is DocNode.Segment -> listOf((node.content as? RichSegment.Audio)?.audioPath)
+                    is DocNode.ColumnGroup -> node.columns.flatMap { col ->
+                        col.children.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
+                    }
                 }
-                // Clean up files after successful persistence
-                when (seg) {
-                    is RichSegment.Image -> File(seg.imagePath).delete()
-                    is RichSegment.Audio -> File(seg.audioPath).delete()
-                    else -> {}
+                if (nodePaths.any { it == playingPath }) {
+                    audioPlayer.stop()
+                    _uiState.value = _uiState.value.copy(playingAudioPath = null)
+                }
+            }
+            currentBlocks.removeAt(index)
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(blocks = currentBlocks)
+                try {
+                    repository.saveContent(noteId, currentBlocks)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to save after block delete", e)
+                }
+                // Clean up media files
+                when (node) {
+                    is DocNode.Segment -> {
+                        when (val seg = node.content) {
+                            is RichSegment.Image -> File(seg.imagePath).delete()
+                            is RichSegment.Audio -> File(seg.audioPath).delete()
+                            else -> {}
+                        }
+                    }
+                    is DocNode.ColumnGroup -> {
+                        node.columns.flatMap { it.children }.forEach { seg ->
+                            when (seg) {
+                                is RichSegment.Image -> File(seg.imagePath).delete()
+                                is RichSegment.Audio -> File(seg.audioPath).delete()
+                                else -> {}
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    // ─── Column management ──────────────────────────────
+
+    /** Append a 2-column group, each column starting with one empty text block. */
+    fun addColumnGroup() {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        currentBlocks.add(
+            DocNode.ColumnGroup(
+                columns = listOf(
+                    ColumnData(children = listOf(RichSegment.Text(""))),
+                    ColumnData(children = listOf(RichSegment.Text("")))
+                )
+            )
+        )
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Add a column to an existing [DocNode.ColumnGroup] (max 4 columns). */
+    fun addColumnToGroup(blockIndex: Int) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        if (group.columns.size >= 4) return
+        val newColumns = group.columns.toMutableList().apply {
+            add(ColumnData(children = listOf(RichSegment.Text(""))))
+        }
+        currentBlocks[blockIndex] = group.copy(columns = newColumns)
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Delete a column from a group. If only 1 column remains, collapse to top-level segments. */
+    fun removeColumn(blockIndex: Int, colIndex: Int) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        if (colIndex !in group.columns.indices) return
+
+        val newColumns = group.columns.toMutableList().apply { removeAt(colIndex) }
+        when {
+            newColumns.isEmpty() -> currentBlocks.removeAt(blockIndex)
+            newColumns.size == 1 -> {
+                // Collapse to top-level segments
+                val flatSegments = newColumns[0].children.map { DocNode.Segment(it) }
+                currentBlocks.removeAt(blockIndex)
+                currentBlocks.addAll(blockIndex, flatSegments)
+            }
+            else -> currentBlocks[blockIndex] = group.copy(columns = newColumns)
+        }
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Adjust column weight after drag. */
+    fun resizeColumn(blockIndex: Int, colIndex: Int, weightDelta: Float) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        if (colIndex >= group.columns.size - 1) return  // last column can't expand right
+
+        val cols = group.columns.toMutableList()
+        val currentWeight = cols[colIndex].weight
+        val nextWeight = cols[colIndex + 1].weight
+        val minWeight = 0.4f
+
+        val newLeft = (currentWeight + weightDelta).coerceAtLeast(minWeight)
+        val newRight = (nextWeight - weightDelta).coerceAtLeast(minWeight)
+
+        cols[colIndex] = cols[colIndex].copy(weight = newLeft)
+        cols[colIndex + 1] = cols[colIndex + 1].copy(weight = newRight)
+        currentBlocks[blockIndex] = group.copy(columns = cols)
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Update a segment inside a column. */
+    fun updateSegmentInColumn(blockIndex: Int, colIndex: Int, segIndex: Int, segment: RichSegment) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        val col = group.columns.getOrNull(colIndex) ?: return
+
+        val newChildren = col.children.toMutableList()
+        if (segIndex in newChildren.indices) {
+            newChildren[segIndex] = segment
+        }
+        val newCols = group.columns.toMutableList().apply {
+            set(colIndex, col.copy(children = newChildren))
+        }
+        currentBlocks[blockIndex] = group.copy(columns = newCols)
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Delete a segment inside a column. */
+    fun deleteSegmentInColumn(blockIndex: Int, colIndex: Int, segIndex: Int) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        val col = group.columns.getOrNull(colIndex) ?: return
+
+        val newChildren = col.children.toMutableList()
+        if (segIndex in newChildren.indices) {
+            val removed = newChildren.removeAt(segIndex)
+            // Clean up media files
+            when (removed) {
+                is RichSegment.Image -> File(removed.imagePath).delete()
+                is RichSegment.Audio -> File(removed.audioPath).delete()
+                else -> {}
+            }
+        }
+
+        // If the column is now empty and this was the only column, collapse the group
+        if (newChildren.isEmpty() && group.columns.size == 1) {
+            currentBlocks.removeAt(blockIndex)
+        } else {
+            val newCols = group.columns.toMutableList().apply {
+                set(colIndex, col.copy(children = newChildren))
+            }
+            currentBlocks[blockIndex] = group.copy(columns = newCols)
+        }
+        onBlocksChanged(currentBlocks)
+    }
+
+    /** Add a segment to a specific column. */
+    fun addSegmentToColumn(blockIndex: Int, colIndex: Int, segment: RichSegment) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
+        val col = group.columns.getOrNull(colIndex) ?: return
+
+        val newCols = group.columns.toMutableList().apply {
+            set(colIndex, col.copy(children = col.children + segment))
+        }
+        currentBlocks[blockIndex] = group.copy(columns = newCols)
+        onBlocksChanged(currentBlocks)
     }
 
     override fun onCleared() {

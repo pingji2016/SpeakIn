@@ -1,5 +1,6 @@
 package com.speakin.app.util
 
+import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import kotlinx.serialization.json.Json
 
@@ -36,12 +37,30 @@ object FormatUtils {
      * Extract a plain-text preview from a note's rich-content JSON.
      * Returns the first [maxLength] characters of concatenated segment text,
      * or an empty string if the content is empty or unparseable.
+     *
+     * Supports both DocNode (v5+) and flat RichSegment (v4) formats.
      */
     fun extractContentPreview(contentJson: String?, maxLength: Int = 10): String {
         if (contentJson.isNullOrBlank()) return ""
         return try {
-            val segments = json.decodeFromString<List<RichSegment>>(contentJson)
-            segments.joinToString(" ") { seg ->
+            val allSegments = try {
+                // Try DocNode format first
+                json.decodeFromString<List<DocNode>>(contentJson)
+                    .flatMap { node ->
+                        when (node) {
+                            is DocNode.Segment -> listOf(node.content)
+                            is DocNode.ColumnGroup -> node.columns.flatMap { it.children }
+                        }
+                    }
+            } catch (_: Exception) {
+                // Fall back to flat RichSegment format (v4)
+                try {
+                    json.decodeFromString<List<RichSegment>>(contentJson)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+            allSegments.joinToString(" ") { seg ->
                 when (seg) {
                     is RichSegment.Text -> seg.text
                     is RichSegment.Audio -> seg.polishedText?.takeIf { it.isNotBlank() }

@@ -2,6 +2,7 @@ package com.speakin.app.ui.notedetail
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,11 +10,14 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -65,7 +69,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -79,6 +85,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.speakin.app.R
+import com.speakin.app.data.local.entity.ColumnData
+import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.local.entity.SpanInfo
 import com.speakin.app.data.local.entity.SpanType
@@ -86,6 +94,8 @@ import com.speakin.app.ui.recording.RecordingBar
 import com.speakin.app.ui.theme.SpeakInRecording
 import com.speakin.app.util.FormatUtils
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -218,9 +228,9 @@ fun NoteDetailScreen(
                     liveCaptionStableLen = uiState.liveCaptionStableLen,
                     isTranscribing = uiState.isTranscribing,
                     onAddText = {
-                        val updated = uiState.segments.toMutableList()
-                        updated.add(RichSegment.Text(""))
-                        viewModel.onSegmentsChanged(updated)
+                        val updated = uiState.blocks.toMutableList()
+                        updated.add(DocNode.Segment(RichSegment.Text("")))
+                        viewModel.onBlocksChanged(updated)
                         focusSegmentIndex = updated.size - 1
                     },
                     onAddImage = {
@@ -228,6 +238,9 @@ fun NoteDetailScreen(
                     },
                     onImportAudio = {
                         audioPickerLauncher.launch("audio/*")
+                    },
+                    onAddColumn = {
+                        viewModel.addColumnGroup()
                     }
                 )
             }
@@ -249,7 +262,7 @@ fun NoteDetailScreen(
                     }
 
                     // Transcribing with no segments yet
-                    uiState.isTranscribing && uiState.segments.isEmpty() -> {
+                    uiState.isTranscribing && uiState.blocks.isEmpty() -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -267,7 +280,7 @@ fun NoteDetailScreen(
                     }
 
                     // Transcribe error with no segments yet — show error with retry option
-                    uiState.segments.isEmpty() && !uiState.isRecording && uiState.transcribeError != null -> {
+                    uiState.blocks.isEmpty() && !uiState.isRecording && uiState.transcribeError != null -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -290,7 +303,7 @@ fun NoteDetailScreen(
                     }
 
                     // Empty state (no segments, not recording)
-                    uiState.segments.isEmpty() && !uiState.isRecording && !uiState.isTranscribing -> {
+                    uiState.blocks.isEmpty() && !uiState.isRecording && !uiState.isTranscribing -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -314,28 +327,44 @@ fun NoteDetailScreen(
 
                     // Rich content editor — always shows at least one editable text area
                     else -> {
-                        val displaySegments = if (uiState.segments.isEmpty()) {
-                            listOf(RichSegment.Text(""))
+                        val displayBlocks = if (uiState.blocks.isEmpty()) {
+                            listOf(DocNode.Segment(RichSegment.Text("")))
                         } else {
-                            uiState.segments
+                            uiState.blocks
                         }
                         RichContentArea(
-                            segments = displaySegments,
-                            isInitialEmpty = uiState.segments.isEmpty(),
+                            blocks = displayBlocks,
+                            isInitialEmpty = uiState.blocks.isEmpty(),
                             playingAudioPath = uiState.playingAudioPath,
                             transcribeError = uiState.transcribeError,
                             focusSegmentIndex = focusSegmentIndex,
                             onFocusDone = { focusSegmentIndex = null },
-                            onSegmentsChanged = { viewModel.onSegmentsChanged(it) },
+                            onBlocksChanged = { viewModel.onBlocksChanged(it) },
                             onImageClick = { fullscreenImagePath = it },
                             onAudioPlayPause = { path, play ->
                                 if (play) viewModel.onPlaybackStarted(path)
                                 else viewModel.onPlaybackStopped()
                             },
-                            onDeleteSegment = { viewModel.deleteSegment(it) },
+                            onDeleteBlock = { viewModel.deleteBlock(it) },
                             onEditAudio = { index ->
                                 viewModel.onPlaybackStopped()
                                 onNavigateToAudioEditor(index)
+                            },
+                            // Column callbacks
+                            onSegmentInColumnChanged = { blockIdx, colIdx, segIdx, seg ->
+                                viewModel.updateSegmentInColumn(blockIdx, colIdx, segIdx, seg)
+                            },
+                            onSegmentInColumnDeleted = { blockIdx, colIdx, segIdx ->
+                                viewModel.deleteSegmentInColumn(blockIdx, colIdx, segIdx)
+                            },
+                            onColumnResized = { blockIdx, colIdx, delta ->
+                                viewModel.resizeColumn(blockIdx, colIdx, delta)
+                            },
+                            onAddColumnToGroup = { blockIdx ->
+                                viewModel.addColumnToGroup(blockIdx)
+                            },
+                            onRemoveColumn = { blockIdx, colIdx ->
+                                viewModel.removeColumn(blockIdx, colIdx)
                             }
                         )
                     }
@@ -346,28 +375,51 @@ fun NoteDetailScreen(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Rich Content Area — inline segments flowing vertically
+// Rich Content Area — renders DocNode list with column support
 // ═══════════════════════════════════════════════════════════════
+
+private fun collectAudioPaths(blocks: List<DocNode>): Set<String> {
+    return blocks.flatMap { node ->
+        when (node) {
+            is DocNode.Segment -> listOf((node.content as? RichSegment.Audio)?.audioPath)
+            is DocNode.ColumnGroup -> node.columns.flatMap { col ->
+                col.children.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
+            }
+        }
+    }.filterNotNull().toSet()
+}
 
 @Composable
 private fun RichContentArea(
-    segments: List<RichSegment>,
+    blocks: List<DocNode>,
     isInitialEmpty: Boolean = false,
     playingAudioPath: String?,
     transcribeError: String?,
     focusSegmentIndex: Int? = null,
     onFocusDone: () -> Unit = {},
-    onSegmentsChanged: (List<RichSegment>) -> Unit,
+    onBlocksChanged: (List<DocNode>) -> Unit,
     onImageClick: (String) -> Unit,
     onAudioPlayPause: (String, Boolean) -> Unit,
-    onDeleteSegment: (Int) -> Unit,
-    onEditAudio: (Int) -> Unit = {}
+    onDeleteBlock: (Int) -> Unit,
+    onEditAudio: (Int) -> Unit = {},
+    // Column callbacks
+    onSegmentInColumnChanged: (blockIndex: Int, colIndex: Int, segIndex: Int, RichSegment) -> Unit = { _, _, _, _ -> },
+    onSegmentInColumnDeleted: (blockIndex: Int, colIndex: Int, segIndex: Int) -> Unit = { _, _, _ -> },
+    onColumnResized: (blockIndex: Int, colIndex: Int, weightDelta: Float) -> Unit = { _, _, _ -> },
+    onAddColumnToGroup: (blockIndex: Int) -> Unit = {},
+    onRemoveColumn: (blockIndex: Int, colIndex: Int) -> Unit = { _, _ -> }
 ) {
     val scrollState = rememberScrollState()
+    val totalSegments = remember(blocks) { blocks.flatMap {
+        when (it) {
+            is DocNode.Segment -> listOf(it.content)
+            is DocNode.ColumnGroup -> it.columns.flatMap { col -> col.children }
+        }
+    } }
 
-    // Auto-scroll to bottom when a new segment is added
-    LaunchedEffect(segments.size) {
-        if (segments.isNotEmpty()) {
+    // Auto-scroll to bottom when a new block is added
+    LaunchedEffect(blocks.size, totalSegments.size) {
+        if (blocks.isNotEmpty()) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
@@ -406,52 +458,306 @@ private fun RichContentArea(
             }
         }
 
-        // Render each segment inline
-        segments.forEachIndexed { index, segment ->
-            when (segment) {
-                is RichSegment.Text -> EditableTextSegment(
-                    text = segment.text,
-                    spans = segment.spans,
-                    onTextChanged = { newText ->
-                        if (isInitialEmpty) {
-                            // First keystroke: persist the new segment
-                            onSegmentsChanged(listOf(RichSegment.Text(newText)))
-                        } else {
-                            val updated = segments.toMutableList()
-                            updated[index] = RichSegment.Text(newText, segment.spans)
-                            onSegmentsChanged(updated)
-                        }
-                    },
-                    onDelete = {
-                        if (!isInitialEmpty) onDeleteSegment(index)
-                    },
-                    showDelete = !isInitialEmpty || segments.size > 1,
-                    requestFocus = index == focusSegmentIndex,
-                    onFocusRequested = onFocusDone
-                )
-                is RichSegment.Image -> ImageSegmentView(
-                    imagePath = segment.imagePath,
-                    altText = segment.altText,
-                    onImageClick = { onImageClick(segment.imagePath) },
-                    onDelete = { onDeleteSegment(index) }
-                )
-                is RichSegment.Audio -> AudioSegmentView(
-                    audioPath = segment.audioPath,
-                    durationMs = segment.durationMs,
-                    transcription = segment.transcription,
-                    polishedText = segment.polishedText,
-                    isPlaying = playingAudioPath == segment.audioPath,
-                    onPlayPause = { play ->
-                        onAudioPlayPause(segment.audioPath, play)
-                    },
-                    onDelete = { onDeleteSegment(index) },
-                    onLongPress = { onEditAudio(index) }
-                )
+        // Render each DocNode
+        blocks.forEachIndexed { blockIndex, node ->
+            when (node) {
+                is DocNode.Segment -> {
+                    val segment = node.content
+                    when (segment) {
+                        is RichSegment.Text -> EditableTextSegment(
+                            text = segment.text,
+                            spans = segment.spans,
+                            onTextChanged = { newText ->
+                                val updated = blocks.toMutableList()
+                                updated[blockIndex] = DocNode.Segment(
+                                    RichSegment.Text(newText, segment.spans)
+                                )
+                                onBlocksChanged(updated)
+                            },
+                            onDelete = {
+                                if (!isInitialEmpty) onDeleteBlock(blockIndex)
+                            },
+                            showDelete = !isInitialEmpty || blocks.size > 1,
+                            requestFocus = blockIndex == focusSegmentIndex,
+                            onFocusRequested = onFocusDone
+                        )
+                        is RichSegment.Image -> ImageSegmentView(
+                            imagePath = segment.imagePath,
+                            altText = segment.altText,
+                            onImageClick = { onImageClick(segment.imagePath) },
+                            onDelete = { onDeleteBlock(blockIndex) }
+                        )
+                        is RichSegment.Audio -> AudioSegmentView(
+                            audioPath = segment.audioPath,
+                            durationMs = segment.durationMs,
+                            transcription = segment.transcription,
+                            polishedText = segment.polishedText,
+                            isPlaying = playingAudioPath == segment.audioPath,
+                            onPlayPause = { play ->
+                                onAudioPlayPause(segment.audioPath, play)
+                            },
+                            onDelete = { onDeleteBlock(blockIndex) },
+                            onLongPress = { onEditAudio(blockIndex) }
+                        )
+                    }
+                }
+                is DocNode.ColumnGroup -> {
+                    ColumnGroupView(
+                        columns = node.columns,
+                        blockIndex = blockIndex,
+                        playingAudioPath = playingAudioPath,
+                        onSegmentInColumnChanged = { colIdx, segIdx, seg ->
+                            onSegmentInColumnChanged(blockIndex, colIdx, segIdx, seg)
+                        },
+                        onSegmentInColumnDeleted = { colIdx, segIdx ->
+                            onSegmentInColumnDeleted(blockIndex, colIdx, segIdx)
+                        },
+                        onColumnResized = { colIdx, delta ->
+                            onColumnResized(blockIndex, colIdx, delta)
+                        },
+                        onImageClick = onImageClick,
+                        onAudioPlayPause = onAudioPlayPause,
+                        onAddColumn = { onAddColumnToGroup(blockIndex) },
+                        onRemoveColumn = { colIdx -> onRemoveColumn(blockIndex, colIdx) }
+                    )
+                }
             }
         }
 
         // Bottom spacer so content doesn't hide behind recording bar
         Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Column Group View — side-by-side columns with draggable dividers
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun ColumnGroupView(
+    columns: List<ColumnData>,
+    blockIndex: Int,
+    playingAudioPath: String?,
+    onSegmentInColumnChanged: (colIndex: Int, segIndex: Int, RichSegment) -> Unit,
+    onSegmentInColumnDeleted: (colIndex: Int, segIndex: Int) -> Unit,
+    onColumnResized: (colIndex: Int, weightDelta: Float) -> Unit,
+    onImageClick: (String) -> Unit,
+    onAudioPlayPause: (String, Boolean) -> Unit,
+    onAddColumn: () -> Unit,
+    onRemoveColumn: (colIndex: Int) -> Unit
+) {
+    val totalWeight = columns.sumOf { it.weight.toDouble() }.toFloat()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        ),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                columns.forEachIndexed { colIdx, colData ->
+                    // Column content
+                    Column(
+                        modifier = Modifier
+                            .weight(colData.weight / totalWeight)
+                            .fillMaxHeight()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Render segments in this column
+                        colData.children.forEachIndexed { segIdx, segment ->
+                            when (segment) {
+                                is RichSegment.Text -> EditableTextSegment(
+                                    text = segment.text,
+                                    spans = segment.spans,
+                                    onTextChanged = { newText ->
+                                        onSegmentInColumnChanged(colIdx, segIdx,
+                                            RichSegment.Text(newText, segment.spans))
+                                    },
+                                    onDelete = {
+                                        onSegmentInColumnDeleted(colIdx, segIdx)
+                                    },
+                                    showDelete = true
+                                )
+                                is RichSegment.Image -> ImageSegmentView(
+                                    imagePath = segment.imagePath,
+                                    altText = segment.altText,
+                                    onImageClick = { onImageClick(segment.imagePath) },
+                                    onDelete = {
+                                        onSegmentInColumnDeleted(colIdx, segIdx)
+                                    }
+                                )
+                                is RichSegment.Audio -> AudioSegmentView(
+                                    audioPath = segment.audioPath,
+                                    durationMs = segment.durationMs,
+                                    transcription = segment.transcription,
+                                    polishedText = segment.polishedText,
+                                    isPlaying = playingAudioPath == segment.audioPath,
+                                    onPlayPause = { play ->
+                                        onAudioPlayPause(segment.audioPath, play)
+                                    },
+                                    onDelete = {
+                                        onSegmentInColumnDeleted(colIdx, segIdx)
+                                    },
+                                    onLongPress = {}
+                                )
+                            }
+                        }
+
+                        // "+" button to add content to this column
+                        var showColumnMenu by remember { mutableStateOf(false) }
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(
+                                onClick = { showColumnMenu = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.TextFields,
+                                    contentDescription = "Add to column",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Mini add-menu
+                        if (showColumnMenu) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                listOf(
+                                    "文本" to Icons.Default.TextFields,
+                                    "图片" to Icons.Default.Image,
+                                    "音频" to Icons.Default.Mic
+                                ).forEach { (label, icon) ->
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                showColumnMenu = false
+                                                when (label) {
+                                                    "文本" -> onSegmentInColumnChanged(
+                                                        colIdx, colData.children.size,
+                                                        RichSegment.Text("")
+                                                    )
+                                                    // Image/Audio handled via external pickers;
+                                                    // for now, just add a text placeholder
+                                                    else -> onSegmentInColumnChanged(
+                                                        colIdx, colData.children.size,
+                                                        RichSegment.Text("")
+                                                    )
+                                                }
+                                            }
+                                            .padding(4.dp)
+                                    ) {
+                                        Icon(
+                                            icon,
+                                            contentDescription = label,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Delete column button (only if > 2 columns)
+                        if (columns.size > 2) {
+                            IconButton(
+                                onClick = { onRemoveColumn(colIdx) },
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .align(Alignment.CenterHorizontally)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove column",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Draggable divider between columns
+                    if (colIdx < columns.size - 1) {
+                        ColumnDivider(
+                            onDrag = { delta ->
+                                onColumnResized(colIdx, delta)
+                            }
+                        )
+                    }
+                }
+            }
+
+            // "Add column" button at the bottom of the group (max 4)
+            if (columns.size < 4) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAddColumn() }
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "＋ 添加列",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Column Divider — draggable vertical separator between columns
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun ColumnDivider(onDrag: (Float) -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+
+    Box(
+        modifier = Modifier
+            .width(20.dp)  // visual + touch target combined
+            .fillMaxHeight()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures { _, dragAmount ->
+                    // Convert pixel delta to weight delta.
+                    // A larger drag = more weight shift. Normalize roughly by screen width.
+                    val weightDelta = dragAmount / 400f  // heuristic: ~400px per weight unit
+                    onDrag(weightDelta)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // Visual divider line
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                )
+        )
     }
 }
 
@@ -549,22 +855,56 @@ private fun ImageSegmentView(
     onImageClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 180.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onImageClick)
-    ) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp
+
+    // Decode image dimensions to detect aspect ratio (height / width)
+    var imageAspectRatio by remember { mutableStateOf(1f) }
+    var dimensionsReady by remember { mutableStateOf(false) }
+    LaunchedEffect(imagePath) {
+        withContext(Dispatchers.IO) {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(imagePath, options)
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                imageAspectRatio = options.outHeight.toFloat() / options.outWidth.toFloat()
+            }
+            dimensionsReady = true
+        }
+    }
+
+    // Phone screenshot or photo: portrait orientation (height > width)
+    val isPhoneLike = dimensionsReady && imageAspectRatio > 1.0f
+
+    // Thumbnail width: 1/5 of screen width
+    val thumbnailWidth = (screenWidthDp / 5).dp
+
+    val boxModifier = Modifier
+        .width(thumbnailWidth)
+        .then(
+            if (isPhoneLike) {
+                // Phone-shaped rectangle: 9:16 aspect ratio
+                Modifier.height(thumbnailWidth * (16f / 9f))
+            } else {
+                // Non-phone images: auto height with reasonable cap
+                Modifier.heightIn(max = 200.dp)
+            }
+        )
+        .clip(RoundedCornerShape(10.dp))
+        .clickable(onClick = onImageClick)
+
+    Box(modifier = boxModifier) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(File(imagePath))
                 .crossfade(true)
                 .size(600)
                 .build(),
             contentDescription = altText.ifEmpty { "Image" },
-            contentScale = ContentScale.FillWidth,
-            modifier = Modifier.fillMaxWidth()
+            contentScale = if (isPhoneLike) ContentScale.Crop else ContentScale.FillWidth,
+            modifier = if (isPhoneLike) Modifier.fillMaxSize() else Modifier.fillMaxWidth()
         )
 
         // Delete button

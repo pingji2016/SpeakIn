@@ -6,7 +6,9 @@ import com.speakin.app.data.local.dto.NoteStats
 import com.speakin.app.data.local.entity.BlockType
 import com.speakin.app.data.local.entity.ContentBlockEntity
 import com.speakin.app.data.local.entity.NoteEntity
+import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
+import com.speakin.app.data.local.entity.flattenSegments
 import com.speakin.app.util.FormatUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -41,7 +43,7 @@ class NoteRepository @Inject constructor(
             title = title,
             createdAt = now,
             updatedAt = now,
-            contentJson = json.encodeToString(emptyList<RichSegment>())  // empty rich doc
+            contentJson = json.encodeToString(emptyList<DocNode>())  // empty rich doc
         )
         noteDao.insertNote(note)
         return note
@@ -49,29 +51,29 @@ class NoteRepository @Inject constructor(
 
     // ─── Rich Content (v4) ─────────────────────────────────
 
-    suspend fun saveContent(noteId: String, segments: List<RichSegment>) {
-        val contentJson = json.encodeToString(segments)
-        val blockCount = segments.size  // rough count for list display
+    suspend fun saveContent(noteId: String, blocks: List<DocNode>) {
+        val contentJson = json.encodeToString(blocks)
+        val blockCount = blocks.flattenSegments().size  // count nested segments for list display
         noteDao.updateContent(noteId, contentJson, blockCount, System.currentTimeMillis())
     }
 
-    fun getContent(noteId: String): Flow<List<RichSegment>?> {
+    fun getContent(noteId: String): Flow<List<DocNode>?> {
         return noteDao.getNoteByIdFlow(noteId).map { note ->
             note?.contentJson?.let { parseContent(it) }
         }
     }
 
-    suspend fun getContentOnce(noteId: String): List<RichSegment>? {
+    suspend fun getContentOnce(noteId: String): List<DocNode>? {
         return noteDao.getNoteById(noteId)?.contentJson?.let { parseContent(it) }
     }
 
-    fun parseSegments(jsonStr: String?): List<RichSegment>? {
+    fun parseSegments(jsonStr: String?): List<DocNode>? {
         return jsonStr?.let { parseContent(it) }
     }
 
     /**
      * 更新指定音频段的文件路径与时长（音频编辑器裁剪保存后调用）。
-     * transcription/polishedText 保留不变。
+     * 仅支持顶层 Segment 中的 Audio；列内 Audio 暂不支持。
      */
     suspend fun updateAudioSegment(
         noteId: String,
@@ -79,17 +81,42 @@ class NoteRepository @Inject constructor(
         newPath: String,
         newDurationMs: Long
     ) {
-        val segments = getContentOnce(noteId)?.toMutableList() ?: return
-        val segment = segments.getOrNull(segmentIndex) as? RichSegment.Audio ?: return
-        segments[segmentIndex] = segment.copy(audioPath = newPath, durationMs = newDurationMs)
-        saveContent(noteId, segments)
+        val blocks = getContentOnce(noteId)?.toMutableList() ?: return
+        val node = blocks.getOrNull(segmentIndex) as? DocNode.Segment ?: return
+        val audio = node.content as? RichSegment.Audio ?: return
+        blocks[segmentIndex] = DocNode.Segment(
+            audio.copy(audioPath = newPath, durationMs = newDurationMs)
+        )
+        saveContent(noteId, blocks)
+    }
+
+    // ─── Content JSON parsing (two-phase with backwards compat) ──
+
+    /**
+     * Parse [jsonStr] into [DocNode] list.
+     * Phase 1: try new DocNode format.
+     * Phase 2: fall back to flat [RichSegment] list and wrap each in DocNode.Segment.
+     */
+    private fun parseContent(jsonStr: String): List<DocNode> {
+        // Phase 1: DocNode format (v5+)
+        try {
+            return json.decodeFromString<List<DocNode>>(jsonStr)
+        } catch (_: Exception) {
+            // Phase 2: flat RichSegment format (v4) — wrap for backwards compat
+            try {
+                val segments: List<RichSegment> = json.decodeFromString(jsonStr)
+                return segments.map { DocNode.Segment(it) }
+            } catch (_: Exception) {
+                return emptyList()
+            }
+        }
     }
 
     /**
      * 将旧版 content_blocks 表数据转换为 RichSegment 列表并保存到 contentJson。
      * 仅在 note.contentJson 为 null 时调用，迁移后不再重复。
      */
-    suspend fun migrateLegacyNoteIfNeeded(noteId: String): List<RichSegment>? {
+    suspend fun migrateLegacyNoteIfNeeded(noteId: String): List<DocNode>? {
         val note = noteDao.getNoteById(noteId) ?: return null
         // Already migrated — return existing content
         note.contentJson?.let { return parseContent(it) }
@@ -97,8 +124,8 @@ class NoteRepository @Inject constructor(
         val blocks = contentBlockDao.getBlocksByNoteIdOnce(noteId)
         if (blocks.isEmpty()) return null
 
-        val segments = blocks.map { block ->
-            when (block.blockType) {
+        val nodes = blocks.map { block ->
+            val segment = when (block.blockType) {
                 BlockType.TEXT -> RichSegment.Text(
                     text = block.textContent.orEmpty()
                 )
@@ -113,19 +140,12 @@ class NoteRepository @Inject constructor(
                     altText = block.textContent.orEmpty()
                 )
             }
+            DocNode.Segment(segment)
         }
 
         // Persist the migration
-        saveContent(noteId, segments)
-        return segments
-    }
-
-    private fun parseContent(jsonStr: String): List<RichSegment>? {
-        return try {
-            json.decodeFromString<List<RichSegment>>(jsonStr)
-        } catch (e: Exception) {
-            null
-        }
+        saveContent(noteId, nodes)
+        return nodes
     }
 
     // ─── Voice Block ───────────────────────────────────────
@@ -215,9 +235,9 @@ class NoteRepository @Inject constructor(
     }
 
     suspend fun deleteNote(noteId: String) {
-        // Clean up rich-content media files
+        // Clean up rich-content media files (nested inside columns as well)
         val note = noteDao.getNoteById(noteId)
-        note?.contentJson?.let { parseContent(it) }?.forEach { seg ->
+        note?.contentJson?.let { parseContent(it) }?.flattenSegments()?.forEach { seg ->
             when (seg) {
                 is RichSegment.Image -> File(seg.imagePath).delete()
                 is RichSegment.Audio -> File(seg.audioPath).delete()
@@ -237,7 +257,7 @@ class NoteRepository @Inject constructor(
         // Clean up media files for all notes first
         for (noteId in noteIds) {
             val note = noteDao.getNoteById(noteId)
-            note?.contentJson?.let { parseContent(it) }?.forEach { seg ->
+            note?.contentJson?.let { parseContent(it) }?.flattenSegments()?.forEach { seg ->
                 when (seg) {
                     is RichSegment.Image -> File(seg.imagePath).delete()
                     is RichSegment.Audio -> File(seg.audioPath).delete()
@@ -268,13 +288,14 @@ class NoteRepository @Inject constructor(
     suspend fun exportNoteAsText(noteId: String): String? {
         val note = noteDao.getNoteById(noteId) ?: return null
 
-        // Prefer rich content (v4+)
-        val segments = note.contentJson?.let { parseContent(it) }
-        if (segments != null) {
+        // Prefer rich content (v4+/v5+)
+        val docNodes = note.contentJson?.let { parseContent(it) }
+        if (docNodes != null) {
+            val allSegments = docNodes.flattenSegments()
             return buildString {
                 appendLine(note.title)
                 appendLine("─".repeat(40))
-                segments.forEach { seg ->
+                allSegments.forEach { seg ->
                     appendLine()
                     when (seg) {
                         is RichSegment.Text -> {
@@ -330,22 +351,24 @@ class NoteRepository @Inject constructor(
     suspend fun getNoteStats(noteId: String): NoteStats? {
         val note = noteDao.getNoteById(noteId) ?: return null
 
-        // Rich content path (v4+)
-        val segments = note.contentJson?.let { parseContent(it) }
-        if (segments != null) {
+        // Rich content path (v4+/v5+)
+        val docNodes = note.contentJson?.let { parseContent(it) }
+        if (docNodes != null) {
+            val allSegments = docNodes.flattenSegments()
             return NoteStats(
                 noteId = note.id,
                 title = note.title,
                 createdAt = note.createdAt,
                 updatedAt = note.updatedAt,
-                blockCount = segments.size,
-                textBlockCount = segments.count { it is RichSegment.Text },
-                voiceBlockCount = segments.count { it is RichSegment.Audio },
-                imageBlockCount = segments.count { it is RichSegment.Image },
-                totalAudioDurationMs = segments.filterIsInstance<RichSegment.Audio>()
-                    .sumOf { it.durationMs },
-                totalTextLength = segments.sumOf { seg ->
-                    when (seg) {
+                blockCount = docNodes.size,
+                textBlockCount = allSegments.count { it is RichSegment.Text },
+                voiceBlockCount = allSegments.count { it is RichSegment.Audio },
+                imageBlockCount = allSegments.count { it is RichSegment.Image },
+                totalAudioDurationMs = allSegments
+                    .filterIsInstance<RichSegment.Audio>()
+                    .fold(0L) { acc, audio -> acc + audio.durationMs },
+                totalTextLength = allSegments.fold(0) { acc, seg ->
+                    acc + when (seg) {
                         is RichSegment.Text -> seg.text.length
                         is RichSegment.Audio -> (seg.transcription?.length ?: 0) +
                             (seg.polishedText?.length ?: 0)

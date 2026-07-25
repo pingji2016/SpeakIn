@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,6 +72,7 @@ fun RecordingBar(
     onAddText: () -> Unit = {},
     onAddImage: () -> Unit = {},
     onImportAudio: () -> Unit = {},
+    onAddColumn: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -303,6 +305,19 @@ fun RecordingBar(
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
+                        }
+
+                        // 分栏按钮
+                        IconButton(
+                            onClick = onAddColumn,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ViewColumn,
+                                contentDescription = "Add column layout",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
+                            )
                         }
 
                         // 图片按钮

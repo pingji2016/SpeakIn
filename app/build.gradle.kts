@@ -102,6 +102,13 @@ android {
         noCompress += listOf("pte", "gguf")
     }
 
+    // 禁用在 `assemble*Release` 时自动上传 ProGuard mapping 文件到 Firebase
+    // 国内网络无法访问 firebasecrashlyticssymbols.googleapis.com，若不上传则
+    // Firebase 控制台中的混淆堆栈无法自动反混淆，必要时可手动上传 mapping 文件
+    firebaseCrashlytics {
+        mappingFileUploadEnabled = false
+    }
+
 }
 
 dependencies {
