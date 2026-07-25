@@ -1,6 +1,7 @@
 package com.speakin.app.data.local.entity
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -26,10 +27,12 @@ sealed class DocNode {
 
     /** A single content segment rendered at full width. */
     @Serializable
+    @SerialName("seg")
     data class Segment(val content: RichSegment) : DocNode()
 
     /** A horizontal row of 2-4 resizable columns. */
     @Serializable
+    @SerialName("cols")
     data class ColumnGroup(val columns: List<ColumnData>) : DocNode()
 }
 

@@ -546,10 +546,12 @@ private fun ColumnGroupView(
     onAddColumn: () -> Unit,
     onRemoveColumn: (colIndex: Int) -> Unit
 ) {
-    val totalWeight = columns.sumOf { it.weight.toDouble() }.toFloat()
+    var totalWeight by remember(columns) { mutableStateOf(columns.sumOf { it.weight.toDouble() }.toFloat()) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 100.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         ),
@@ -557,9 +559,7 @@ private fun ColumnGroupView(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Max),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 columns.forEachIndexed { colIdx, colData ->
@@ -567,7 +567,6 @@ private fun ColumnGroupView(
                     Column(
                         modifier = Modifier
                             .weight(colData.weight / totalWeight)
-                            .fillMaxHeight()
                             .padding(8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -733,17 +732,13 @@ private fun ColumnGroupView(
 
 @Composable
 private fun ColumnDivider(onDrag: (Float) -> Unit) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-
     Box(
         modifier = Modifier
             .width(20.dp)  // visual + touch target combined
-            .fillMaxHeight()
+            .height(80.dp)  // fixed touch target height
             .pointerInput(Unit) {
                 detectHorizontalDragGestures { _, dragAmount ->
-                    // Convert pixel delta to weight delta.
-                    // A larger drag = more weight shift. Normalize roughly by screen width.
-                    val weightDelta = dragAmount / 400f  // heuristic: ~400px per weight unit
+                    val weightDelta = dragAmount / 400f
                     onDrag(weightDelta)
                 }
             },
@@ -753,7 +748,7 @@ private fun ColumnDivider(onDrag: (Float) -> Unit) {
         Box(
             modifier = Modifier
                 .width(2.dp)
-                .fillMaxHeight()
+                .height(40.dp)
                 .background(
                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                 )
