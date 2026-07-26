@@ -15,12 +15,13 @@ import kotlinx.serialization.json.jsonPrimitive
  * A node in the rich-content document tree.
  *
  * The document is a flat list of DocNode items.  Each node is either a single
- * content segment (text / image / audio) or a row of side-by-side columns, where
- * each column holds its own vertical list of segments.
+ * content segment (text / image / audio) or a flow group where items arrange
+ * themselves in a wrapping flow layout (like CSS flexbox wrap).
  *
  * JSON examples:
  *   Single segment:  {"type":"seg","content":{"text":"hello","spans":[]}}
- *   Column group:    {"type":"cols","columns":[{"weight":1.0,"children":[...]},...]}
+ *   Flow group:      {"type":"flow","items":[{...}, {...}]}
+ *   Column group (legacy): {"type":"cols","columns":[...]}
  */
 @Serializable(with = DocNodeSerializer::class)
 sealed class DocNode {
@@ -30,18 +31,24 @@ sealed class DocNode {
     @SerialName("seg")
     data class Segment(val content: RichSegment) : DocNode()
 
-    /** A horizontal row of 2-4 resizable columns. */
+    /** A wrapping flow layout of items — each item takes its natural width
+     *  and wraps to the next row when horizontal space runs out. */
+    @Serializable
+    @SerialName("flow")
+    data class FlowGroup(val items: List<RichSegment>) : DocNode()
+
+    /** Legacy: a horizontal row of 2-4 resizable columns.
+     *  @deprecated Replaced by [FlowGroup].  Kept only for deserializing old data. */
+    @Deprecated("Replaced by FlowGroup", ReplaceWith("FlowGroup"))
     @Serializable
     @SerialName("cols")
     data class ColumnGroup(val columns: List<ColumnData>) : DocNode()
 }
 
 /**
- * One column inside a [DocNode.ColumnGroup].
+ * One column inside a [DocNode.ColumnGroup] (legacy format).
  *
  * @param weight proportional width relative to sibling columns (default 1f).
- *               A 2-column group with weights [1f, 2f] gives the second column
- *               twice the width of the first.
  * @param children the vertical list of content segments within this column.
  */
 @Serializable
@@ -50,14 +57,21 @@ data class ColumnData(
     val children: List<RichSegment> = emptyList()
 )
 
+// ── Migration helper ─────────────────────────────────────────────────
+
+/** Convert legacy [DocNode.ColumnGroup] to the new [DocNode.FlowGroup] format. */
+fun DocNode.ColumnGroup.toFlowGroup(): DocNode.FlowGroup =
+    DocNode.FlowGroup(items = columns.flatMap { it.children })
+
 // ── Polymorphic serializer ──────────────────────────────────────────
 
 object DocNodeSerializer : JsonContentPolymorphicSerializer<DocNode>(DocNode::class) {
     override fun selectDeserializer(element: JsonElement): KSerializer<out DocNode> {
         val type = element.jsonObject["type"]?.jsonPrimitive?.content
         return when (type) {
-            "cols" -> DocNode.ColumnGroup.serializer()
-            else   -> DocNode.Segment.serializer()   // "seg" or missing (fallback)
+            "flow" -> DocNode.FlowGroup.serializer()
+            "cols" -> DocNode.ColumnGroup.serializer()  // legacy compat
+            else   -> DocNode.Segment.serializer()       // "seg" or missing (fallback)
         }
     }
 }
@@ -66,11 +80,13 @@ object DocNodeSerializer : JsonContentPolymorphicSerializer<DocNode>(DocNode::cl
 
 /**
  * Flatten a [DocNode] tree into a flat list of [RichSegment], recursing into
- * column groups.  Useful for text export, stats counting, and media cleanup.
+ * flow groups and legacy column groups.  Useful for text export, stats counting,
+ * and media cleanup.
  */
 fun List<DocNode>.flattenSegments(): List<RichSegment> = flatMap { node ->
     when (node) {
         is DocNode.Segment -> listOf(node.content)
+        is DocNode.FlowGroup -> node.items
         is DocNode.ColumnGroup -> node.columns.flatMap { col -> col.children }
     }
 }

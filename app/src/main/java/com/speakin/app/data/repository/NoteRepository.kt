@@ -9,6 +9,7 @@ import com.speakin.app.data.local.entity.NoteEntity
 import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.local.entity.flattenSegments
+import com.speakin.app.data.local.entity.toFlowGroup
 import com.speakin.app.util.FormatUtils
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -100,7 +101,11 @@ class NoteRepository @Inject constructor(
     private fun parseContent(jsonStr: String): List<DocNode> {
         // Phase 1: DocNode format (v5+)
         try {
-            return json.decodeFromString<List<DocNode>>(jsonStr)
+            val nodes = json.decodeFromString<List<DocNode>>(jsonStr)
+            // Migrate legacy ColumnGroup → FlowGroup on load
+            return nodes.map { node ->
+                if (node is DocNode.ColumnGroup) node.toFlowGroup() else node
+            }
         } catch (_: Exception) {
             // Phase 2: flat RichSegment format (v4) — wrap for backwards compat
             try {

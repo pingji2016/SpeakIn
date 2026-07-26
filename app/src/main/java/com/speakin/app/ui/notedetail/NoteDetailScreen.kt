@@ -20,12 +20,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +48,8 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,7 +89,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.speakin.app.R
-import com.speakin.app.data.local.entity.ColumnData
 import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.local.entity.SpanInfo
@@ -239,8 +242,8 @@ fun NoteDetailScreen(
                     onImportAudio = {
                         audioPickerLauncher.launch("audio/*")
                     },
-                    onAddColumn = {
-                        viewModel.addColumnGroup()
+                    onAddFlow = {
+                        viewModel.addFlowGroup()
                     }
                 )
             }
@@ -350,21 +353,15 @@ fun NoteDetailScreen(
                                 viewModel.onPlaybackStopped()
                                 onNavigateToAudioEditor(index)
                             },
-                            // Column callbacks
-                            onSegmentInColumnChanged = { blockIdx, colIdx, segIdx, seg ->
-                                viewModel.updateSegmentInColumn(blockIdx, colIdx, segIdx, seg)
+                            // Flow group callbacks
+                            onFlowItemChanged = { blockIdx, itemIdx, seg ->
+                                viewModel.updateItemInFlowGroup(blockIdx, itemIdx, seg)
                             },
-                            onSegmentInColumnDeleted = { blockIdx, colIdx, segIdx ->
-                                viewModel.deleteSegmentInColumn(blockIdx, colIdx, segIdx)
+                            onFlowItemDeleted = { blockIdx, itemIdx ->
+                                viewModel.removeItemFromFlowGroup(blockIdx, itemIdx)
                             },
-                            onColumnResized = { blockIdx, colIdx, delta ->
-                                viewModel.resizeColumn(blockIdx, colIdx, delta)
-                            },
-                            onAddColumnToGroup = { blockIdx ->
-                                viewModel.addColumnToGroup(blockIdx)
-                            },
-                            onRemoveColumn = { blockIdx, colIdx ->
-                                viewModel.removeColumn(blockIdx, colIdx)
+                            onAddItemToFlowGroup = { blockIdx, seg ->
+                                viewModel.addItemToFlowGroup(blockIdx, seg)
                             }
                         )
                     }
@@ -382,6 +379,7 @@ private fun collectAudioPaths(blocks: List<DocNode>): Set<String> {
     return blocks.flatMap { node ->
         when (node) {
             is DocNode.Segment -> listOf((node.content as? RichSegment.Audio)?.audioPath)
+            is DocNode.FlowGroup -> node.items.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
             is DocNode.ColumnGroup -> node.columns.flatMap { col ->
                 col.children.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
             }
@@ -402,17 +400,16 @@ private fun RichContentArea(
     onAudioPlayPause: (String, Boolean) -> Unit,
     onDeleteBlock: (Int) -> Unit,
     onEditAudio: (Int) -> Unit = {},
-    // Column callbacks
-    onSegmentInColumnChanged: (blockIndex: Int, colIndex: Int, segIndex: Int, RichSegment) -> Unit = { _, _, _, _ -> },
-    onSegmentInColumnDeleted: (blockIndex: Int, colIndex: Int, segIndex: Int) -> Unit = { _, _, _ -> },
-    onColumnResized: (blockIndex: Int, colIndex: Int, weightDelta: Float) -> Unit = { _, _, _ -> },
-    onAddColumnToGroup: (blockIndex: Int) -> Unit = {},
-    onRemoveColumn: (blockIndex: Int, colIndex: Int) -> Unit = { _, _ -> }
+    // Flow group callbacks
+    onFlowItemChanged: (blockIndex: Int, itemIndex: Int, RichSegment) -> Unit = { _, _, _ -> },
+    onFlowItemDeleted: (blockIndex: Int, itemIndex: Int) -> Unit = { _, _ -> },
+    onAddItemToFlowGroup: (blockIndex: Int, RichSegment) -> Unit = { _, _ -> }
 ) {
     val scrollState = rememberScrollState()
     val totalSegments = remember(blocks) { blocks.flatMap {
         when (it) {
             is DocNode.Segment -> listOf(it.content)
+            is DocNode.FlowGroup -> it.items
             is DocNode.ColumnGroup -> it.columns.flatMap { col -> col.children }
         }
     } }
@@ -501,25 +498,63 @@ private fun RichContentArea(
                         )
                     }
                 }
-                is DocNode.ColumnGroup -> {
-                    ColumnGroupView(
-                        columns = node.columns,
-                        blockIndex = blockIndex,
+                is DocNode.FlowGroup -> {
+                    FlowGroupView(
+                        items = node.items,
+                        flowIndex = blockIndex,
                         playingAudioPath = playingAudioPath,
-                        onSegmentInColumnChanged = { colIdx, segIdx, seg ->
-                            onSegmentInColumnChanged(blockIndex, colIdx, segIdx, seg)
+                        onItemChanged = { itemIdx, seg ->
+                            onFlowItemChanged(blockIndex, itemIdx, seg)
                         },
-                        onSegmentInColumnDeleted = { colIdx, segIdx ->
-                            onSegmentInColumnDeleted(blockIndex, colIdx, segIdx)
-                        },
-                        onColumnResized = { colIdx, delta ->
-                            onColumnResized(blockIndex, colIdx, delta)
+                        onItemDeleted = { itemIdx ->
+                            onFlowItemDeleted(blockIndex, itemIdx)
                         },
                         onImageClick = onImageClick,
                         onAudioPlayPause = onAudioPlayPause,
-                        onAddColumn = { onAddColumnToGroup(blockIndex) },
-                        onRemoveColumn = { colIdx -> onRemoveColumn(blockIndex, colIdx) }
+                        onAddItem = { seg ->
+                            onAddItemToFlowGroup(blockIndex, seg)
+                        }
                     )
+                }
+                // Legacy ColumnGroup — migrated to FlowGroup on load, but handle in case of stale UI state
+                is DocNode.ColumnGroup -> {
+                    // Render legacy columns as a fallback (should rarely be reached after migration)
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        node.columns.forEach { col ->
+                            col.children.forEach { seg ->
+                                when (seg) {
+                                    is RichSegment.Text -> EditableTextSegment(
+                                        text = seg.text,
+                                        spans = seg.spans,
+                                        onTextChanged = {},
+                                        onDelete = {},
+                                        showDelete = false
+                                    )
+                                    is RichSegment.Image -> ImageSegmentView(
+                                        imagePath = seg.imagePath,
+                                        altText = seg.altText,
+                                        onImageClick = { onImageClick(seg.imagePath) },
+                                        onDelete = {}
+                                    )
+                                    is RichSegment.Audio -> AudioSegmentView(
+                                        audioPath = seg.audioPath,
+                                        durationMs = seg.durationMs,
+                                        transcription = seg.transcription,
+                                        polishedText = seg.polishedText,
+                                        isPlaying = playingAudioPath == seg.audioPath,
+                                        onPlayPause = { play ->
+                                            onAudioPlayPause(seg.audioPath, play)
+                                        },
+                                        onDelete = {},
+                                        onLongPress = {}
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -530,229 +565,261 @@ private fun RichContentArea(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Column Group View — side-by-side columns with draggable dividers
+// Flow Group View — wrapping flow layout using FlowRow
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun ColumnGroupView(
-    columns: List<ColumnData>,
-    blockIndex: Int,
+private fun FlowGroupView(
+    items: List<RichSegment>,
+    flowIndex: Int,
     playingAudioPath: String?,
-    onSegmentInColumnChanged: (colIndex: Int, segIndex: Int, RichSegment) -> Unit,
-    onSegmentInColumnDeleted: (colIndex: Int, segIndex: Int) -> Unit,
-    onColumnResized: (colIndex: Int, weightDelta: Float) -> Unit,
+    onItemChanged: (itemIndex: Int, RichSegment) -> Unit,
+    onItemDeleted: (itemIndex: Int) -> Unit,
     onImageClick: (String) -> Unit,
     onAudioPlayPause: (String, Boolean) -> Unit,
-    onAddColumn: () -> Unit,
-    onRemoveColumn: (colIndex: Int) -> Unit
+    onAddItem: (RichSegment) -> Unit
 ) {
-    var totalWeight by remember(columns) { mutableStateOf(columns.sumOf { it.weight.toDouble() }.toFloat()) }
+    val configuration = LocalConfiguration.current
+    val thumbnailWidth = (configuration.screenWidthDp / 5).dp
+    var showAddMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // Image picker for adding images inside the flow group
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val tempFile = File(context.cacheDir, "pick_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(it)?.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            onAddItem(RichSegment.Image(imagePath = tempFile.absolutePath))
+        }
+    }
+
+    // Audio picker for adding audio inside the flow group
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val ext = context.contentResolver.getType(it)
+                ?.substringAfterLast("/")
+                ?.takeIf { type -> type != "*" && type.length <= 5 }
+                ?: "m4a"
+            val tempFile = File(context.cacheDir, "import_${System.currentTimeMillis()}.$ext")
+            context.contentResolver.openInputStream(it)?.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            onAddItem(RichSegment.Audio(audioPath = tempFile.absolutePath, durationMs = 0L))
+        }
+    }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 100.dp),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         ),
         shape = RoundedCornerShape(10.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
+        Column(modifier = Modifier.padding(8.dp)) {
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(0.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                columns.forEachIndexed { colIdx, colData ->
-                    // Column content
-                    Column(
-                        modifier = Modifier
-                            .weight(colData.weight / totalWeight)
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Render segments in this column
-                        colData.children.forEachIndexed { segIdx, segment ->
-                            when (segment) {
-                                is RichSegment.Text -> EditableTextSegment(
-                                    text = segment.text,
-                                    spans = segment.spans,
-                                    onTextChanged = { newText ->
-                                        onSegmentInColumnChanged(colIdx, segIdx,
-                                            RichSegment.Text(newText, segment.spans))
-                                    },
-                                    onDelete = {
-                                        onSegmentInColumnDeleted(colIdx, segIdx)
-                                    },
-                                    showDelete = true
-                                )
-                                is RichSegment.Image -> ImageSegmentView(
-                                    imagePath = segment.imagePath,
-                                    altText = segment.altText,
-                                    onImageClick = { onImageClick(segment.imagePath) },
-                                    onDelete = {
-                                        onSegmentInColumnDeleted(colIdx, segIdx)
-                                    }
-                                )
-                                is RichSegment.Audio -> AudioSegmentView(
-                                    audioPath = segment.audioPath,
-                                    durationMs = segment.durationMs,
-                                    transcription = segment.transcription,
-                                    polishedText = segment.polishedText,
-                                    isPlaying = playingAudioPath == segment.audioPath,
-                                    onPlayPause = { play ->
-                                        onAudioPlayPause(segment.audioPath, play)
-                                    },
-                                    onDelete = {
-                                        onSegmentInColumnDeleted(colIdx, segIdx)
-                                    },
-                                    onLongPress = {}
+                items.forEachIndexed { index, segment ->
+                    when (segment) {
+                        is RichSegment.Text -> {
+                            var textFieldValue by remember(segment) {
+                                mutableStateOf(
+                                    TextFieldValue(
+                                        annotatedString = buildAnnotatedForDisplay(segment.text, segment.spans),
+                                        selection = TextRange(segment.text.length)
+                                    )
                                 )
                             }
-                        }
-
-                        // "+" button to add content to this column
-                        var showColumnMenu by remember { mutableStateOf(false) }
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            IconButton(
-                                onClick = { showColumnMenu = true },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.TextFields,
-                                    contentDescription = "Add to column",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        // Mini add-menu
-                        if (showColumnMenu) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                                modifier = Modifier
+                                    .widthIn(min = 100.dp, max = 300.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.Top
                             ) {
-                                listOf(
-                                    "文本" to Icons.Default.TextFields,
-                                    "图片" to Icons.Default.Image,
-                                    "音频" to Icons.Default.Mic
-                                ).forEach { (label, icon) ->
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable {
-                                                showColumnMenu = false
-                                                when (label) {
-                                                    "文本" -> onSegmentInColumnChanged(
-                                                        colIdx, colData.children.size,
-                                                        RichSegment.Text("")
-                                                    )
-                                                    // Image/Audio handled via external pickers;
-                                                    // for now, just add a text placeholder
-                                                    else -> onSegmentInColumnChanged(
-                                                        colIdx, colData.children.size,
-                                                        RichSegment.Text("")
-                                                    )
-                                                }
-                                            }
-                                            .padding(4.dp)
-                                    ) {
-                                        Icon(
-                                            icon,
-                                            contentDescription = label,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Text(
-                                            label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                BasicTextField(
+                                    value = textFieldValue,
+                                    onValueChange = { newValue ->
+                                        textFieldValue = newValue
+                                        onItemChanged(index,
+                                            RichSegment.Text(newValue.text, segment.spans))
+                                    },
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                                        MaterialTheme.colorScheme.primary
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    minLines = 1,
+                                    maxLines = 3
+                                )
+                                IconButton(
+                                    onClick = { onItemDeleted(index) },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
                                 }
                             }
                         }
 
-                        // Delete column button (only if > 2 columns)
-                        if (columns.size > 2) {
-                            IconButton(
-                                onClick = { onRemoveColumn(colIdx) },
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .align(Alignment.CenterHorizontally)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Remove column",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                                    modifier = Modifier.size(14.dp)
+                        is RichSegment.Image -> {
+                            Box(modifier = Modifier.size(thumbnailWidth)) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(File(segment.imagePath))
+                                        .crossfade(true)
+                                        .size(300)
+                                        .build(),
+                                    contentDescription = segment.altText.ifEmpty { "Image" },
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onImageClick(segment.imagePath) }
                                 )
+                                IconButton(
+                                    onClick = { onItemDeleted(index) },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(2.dp)
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        is RichSegment.Audio -> {
+                            Row(
+                                modifier = Modifier
+                                    .widthIn(min = 160.dp, max = 340.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        onAudioPlayPause(
+                                            segment.audioPath,
+                                            playingAudioPath != segment.audioPath
+                                        )
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        if (playingAudioPath == segment.audioPath) Icons.Default.Stop
+                                        else Icons.Default.PlayArrow,
+                                        contentDescription = if (playingAudioPath == segment.audioPath) "Stop" else "Play",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Audio",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { onItemDeleted(index) },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                }
 
-                    // Draggable divider between columns
-                    if (colIdx < columns.size - 1) {
-                        ColumnDivider(
-                            onDrag = { delta ->
-                                onColumnResized(colIdx, delta)
+                // "+" add button at end of flow
+                Box {
+                    IconButton(
+                        onClick = { showAddMenu = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Icon(
+                            Icons.Default.TextFields,
+                            contentDescription = "Add item",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showAddMenu,
+                        onDismissRequest = { showAddMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("文本") },
+                            onClick = {
+                                showAddMenu = false
+                                onAddItem(RichSegment.Text(""))
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.TextFields, contentDescription = null,
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("图片") },
+                            onClick = {
+                                showAddMenu = false
+                                imagePickerLauncher.launch("image/*")
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Image, contentDescription = null,
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("音频") },
+                            onClick = {
+                                showAddMenu = false
+                                audioPickerLauncher.launch("audio/*")
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Mic, contentDescription = null,
+                                    modifier = Modifier.size(18.dp))
                             }
                         )
                     }
                 }
             }
-
-            // "Add column" button at the bottom of the group (max 4)
-            if (columns.size < 4) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onAddColumn() }
-                        .padding(vertical = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "＋ 添加列",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                    )
-                }
-            }
         }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Column Divider — draggable vertical separator between columns
-// ═══════════════════════════════════════════════════════════════
-
-@Composable
-private fun ColumnDivider(onDrag: (Float) -> Unit) {
-    Box(
-        modifier = Modifier
-            .width(20.dp)  // visual + touch target combined
-            .height(80.dp)  // fixed touch target height
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, dragAmount ->
-                    val weightDelta = dragAmount / 400f
-                    onDrag(weightDelta)
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        // Visual divider line
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(40.dp)
-                .background(
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                )
-        )
     }
 }
 

@@ -49,6 +49,7 @@ object FormatUtils {
                     .flatMap { node ->
                         when (node) {
                             is DocNode.Segment -> listOf(node.content)
+                            is DocNode.FlowGroup -> node.items
                             is DocNode.ColumnGroup -> node.columns.flatMap { it.children }
                         }
                     }

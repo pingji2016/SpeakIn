@@ -5,7 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.speakin.app.data.local.entity.NoteEntity
-import com.speakin.app.data.local.entity.ColumnData
 import com.speakin.app.data.local.entity.DocNode
 import com.speakin.app.data.local.entity.RichSegment
 import com.speakin.app.data.repository.NoteRepository
@@ -413,6 +412,7 @@ class NoteDetailViewModel @Inject constructor(
             if (playingPath != null) {
                 val nodePaths = when (node) {
                     is DocNode.Segment -> listOf((node.content as? RichSegment.Audio)?.audioPath)
+                    is DocNode.FlowGroup -> node.items.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
                     is DocNode.ColumnGroup -> node.columns.flatMap { col ->
                         col.children.filterIsInstance<RichSegment.Audio>().map { it.audioPath }
                     }
@@ -439,6 +439,15 @@ class NoteDetailViewModel @Inject constructor(
                             else -> {}
                         }
                     }
+                    is DocNode.FlowGroup -> {
+                        node.items.forEach { seg ->
+                            when (seg) {
+                                is RichSegment.Image -> File(seg.imagePath).delete()
+                                is RichSegment.Audio -> File(seg.audioPath).delete()
+                                else -> {}
+                            }
+                        }
+                    }
                     is DocNode.ColumnGroup -> {
                         node.columns.flatMap { it.children }.forEach { seg ->
                             when (seg) {
@@ -453,130 +462,61 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
-    // ─── Column management ──────────────────────────────
+    // ─── Flow group management ──────────────────────────
 
-    /** Append a 2-column group, each column starting with one empty text block. */
-    fun addColumnGroup() {
+    /** Append a flow group with one empty text item to start. */
+    fun addFlowGroup() {
         val currentBlocks = _uiState.value.blocks.toMutableList()
         currentBlocks.add(
-            DocNode.ColumnGroup(
-                columns = listOf(
-                    ColumnData(children = listOf(RichSegment.Text(""))),
-                    ColumnData(children = listOf(RichSegment.Text("")))
-                )
-            )
+            DocNode.FlowGroup(items = listOf(RichSegment.Text("")))
         )
         onBlocksChanged(currentBlocks)
     }
 
-    /** Add a column to an existing [DocNode.ColumnGroup] (max 4 columns). */
-    fun addColumnToGroup(blockIndex: Int) {
+    /** Add a segment to an existing flow group. */
+    fun addItemToFlowGroup(blockIndex: Int, segment: RichSegment) {
         val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        if (group.columns.size >= 4) return
-        val newColumns = group.columns.toMutableList().apply {
-            add(ColumnData(children = listOf(RichSegment.Text(""))))
-        }
-        currentBlocks[blockIndex] = group.copy(columns = newColumns)
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.FlowGroup ?: return
+        currentBlocks[blockIndex] = group.copy(items = group.items + segment)
         onBlocksChanged(currentBlocks)
     }
 
-    /** Delete a column from a group. If only 1 column remains, collapse to top-level segments. */
-    fun removeColumn(blockIndex: Int, colIndex: Int) {
+    /** Update a segment inside a flow group. */
+    fun updateItemInFlowGroup(blockIndex: Int, itemIndex: Int, segment: RichSegment) {
         val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        if (colIndex !in group.columns.indices) return
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.FlowGroup ?: return
+        if (itemIndex !in group.items.indices) return
+        val newItems = group.items.toMutableList().apply { set(itemIndex, segment) }
+        currentBlocks[blockIndex] = group.copy(items = newItems)
+        onBlocksChanged(currentBlocks)
+    }
 
-        val newColumns = group.columns.toMutableList().apply { removeAt(colIndex) }
-        when {
-            newColumns.isEmpty() -> currentBlocks.removeAt(blockIndex)
-            newColumns.size == 1 -> {
-                // Collapse to top-level segments
-                val flatSegments = newColumns[0].children.map { DocNode.Segment(it) }
-                currentBlocks.removeAt(blockIndex)
-                currentBlocks.addAll(blockIndex, flatSegments)
+    /** Remove a segment from a flow group.  If the group becomes empty, remove it entirely. */
+    fun removeItemFromFlowGroup(blockIndex: Int, itemIndex: Int) {
+        val currentBlocks = _uiState.value.blocks.toMutableList()
+        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.FlowGroup ?: return
+        if (itemIndex !in group.items.indices) return
+
+        val removed = group.items[itemIndex]
+        // Clean up media files
+        when (removed) {
+            is RichSegment.Image -> File(removed.imagePath).delete()
+            is RichSegment.Audio -> {
+                File(removed.audioPath).delete()
+                if (_uiState.value.playingAudioPath == removed.audioPath) {
+                    audioPlayer.stop()
+                    _uiState.value = _uiState.value.copy(playingAudioPath = null)
+                }
             }
-            else -> currentBlocks[blockIndex] = group.copy(columns = newColumns)
-        }
-        onBlocksChanged(currentBlocks)
-    }
-
-    /** Adjust column weight after drag. */
-    fun resizeColumn(blockIndex: Int, colIndex: Int, weightDelta: Float) {
-        val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        if (colIndex >= group.columns.size - 1) return  // last column can't expand right
-
-        val cols = group.columns.toMutableList()
-        val currentWeight = cols[colIndex].weight
-        val nextWeight = cols[colIndex + 1].weight
-        val minWeight = 0.4f
-
-        val newLeft = (currentWeight + weightDelta).coerceAtLeast(minWeight)
-        val newRight = (nextWeight - weightDelta).coerceAtLeast(minWeight)
-
-        cols[colIndex] = cols[colIndex].copy(weight = newLeft)
-        cols[colIndex + 1] = cols[colIndex + 1].copy(weight = newRight)
-        currentBlocks[blockIndex] = group.copy(columns = cols)
-        onBlocksChanged(currentBlocks)
-    }
-
-    /** Update a segment inside a column. */
-    fun updateSegmentInColumn(blockIndex: Int, colIndex: Int, segIndex: Int, segment: RichSegment) {
-        val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        val col = group.columns.getOrNull(colIndex) ?: return
-
-        val newChildren = col.children.toMutableList()
-        if (segIndex in newChildren.indices) {
-            newChildren[segIndex] = segment
-        }
-        val newCols = group.columns.toMutableList().apply {
-            set(colIndex, col.copy(children = newChildren))
-        }
-        currentBlocks[blockIndex] = group.copy(columns = newCols)
-        onBlocksChanged(currentBlocks)
-    }
-
-    /** Delete a segment inside a column. */
-    fun deleteSegmentInColumn(blockIndex: Int, colIndex: Int, segIndex: Int) {
-        val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        val col = group.columns.getOrNull(colIndex) ?: return
-
-        val newChildren = col.children.toMutableList()
-        if (segIndex in newChildren.indices) {
-            val removed = newChildren.removeAt(segIndex)
-            // Clean up media files
-            when (removed) {
-                is RichSegment.Image -> File(removed.imagePath).delete()
-                is RichSegment.Audio -> File(removed.audioPath).delete()
-                else -> {}
-            }
+            else -> {}
         }
 
-        // If the column is now empty and this was the only column, collapse the group
-        if (newChildren.isEmpty() && group.columns.size == 1) {
+        val newItems = group.items.toMutableList().apply { removeAt(itemIndex) }
+        if (newItems.isEmpty()) {
             currentBlocks.removeAt(blockIndex)
         } else {
-            val newCols = group.columns.toMutableList().apply {
-                set(colIndex, col.copy(children = newChildren))
-            }
-            currentBlocks[blockIndex] = group.copy(columns = newCols)
+            currentBlocks[blockIndex] = group.copy(items = newItems)
         }
-        onBlocksChanged(currentBlocks)
-    }
-
-    /** Add a segment to a specific column. */
-    fun addSegmentToColumn(blockIndex: Int, colIndex: Int, segment: RichSegment) {
-        val currentBlocks = _uiState.value.blocks.toMutableList()
-        val group = currentBlocks.getOrNull(blockIndex) as? DocNode.ColumnGroup ?: return
-        val col = group.columns.getOrNull(colIndex) ?: return
-
-        val newCols = group.columns.toMutableList().apply {
-            set(colIndex, col.copy(children = col.children + segment))
-        }
-        currentBlocks[blockIndex] = group.copy(columns = newCols)
         onBlocksChanged(currentBlocks)
     }
 
