@@ -95,6 +95,8 @@ class ModelConfigRepository @Inject constructor(
             .remove(KEY_LLM_URLS)
             .remove(KEY_ASR_MODEL_TYPE)
             .remove(KEY_LLM_MODEL_TYPE)
+            .remove(KEY_MODEL_STORAGE_PATH)
+            .remove(KEY_MODEL_STORAGE_URI)
             .apply()
     }
 
@@ -102,7 +104,48 @@ class ModelConfigRepository @Inject constructor(
         return getAsrBaseUrls().isNotEmpty() ||
                 getLlmUrls().isNotEmpty() ||
                 getAsrModelType() != DEFAULT_ASR_MODEL_TYPE ||
-                getLlmModelType() != DEFAULT_LLM_MODEL_TYPE
+                getLlmModelType() != DEFAULT_LLM_MODEL_TYPE ||
+                getModelStoragePath() != null
+    }
+
+    // ─── 模型存储路径 ───
+
+    /**
+     * 获取用户自定义的模型存储根目录路径（文件系统路径）。
+     * 返回 null 表示使用默认内部存储。
+     */
+    fun getModelStoragePath(): String? {
+        return prefs.getString(KEY_MODEL_STORAGE_PATH, null)?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 设置自定义模型存储根目录路径。
+     * 传入 null 恢复默认。
+     */
+    fun setModelStoragePath(path: String?) {
+        if (path != null) {
+            prefs.edit().putString(KEY_MODEL_STORAGE_PATH, path).apply()
+        } else {
+            prefs.edit().remove(KEY_MODEL_STORAGE_PATH).remove(KEY_MODEL_STORAGE_URI).apply()
+        }
+    }
+
+    /**
+     * 获取持久化的 SAF 目录 URI 字符串。
+     */
+    fun getModelStorageUri(): String? {
+        return prefs.getString(KEY_MODEL_STORAGE_URI, null)?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 持久化 SAF 目录 URI 字符串（用于后续获取访问权限）。
+     */
+    fun setModelStorageUri(uri: String?) {
+        if (uri != null) {
+            prefs.edit().putString(KEY_MODEL_STORAGE_URI, uri).apply()
+        } else {
+            prefs.edit().remove(KEY_MODEL_STORAGE_URI).apply()
+        }
     }
 
     companion object {
@@ -111,6 +154,8 @@ class ModelConfigRepository @Inject constructor(
         private const val KEY_LLM_URLS = "llm_model_urls"
         private const val KEY_ASR_MODEL_TYPE = "asr_model_type"
         private const val KEY_LLM_MODEL_TYPE = "llm_model_type"
+        private const val KEY_MODEL_STORAGE_PATH = "model_storage_path"
+        private const val KEY_MODEL_STORAGE_URI = "model_storage_uri"
 
         /** 默认 ASR 模型类型 */
         const val DEFAULT_ASR_MODEL_TYPE = "whisper-tiny"

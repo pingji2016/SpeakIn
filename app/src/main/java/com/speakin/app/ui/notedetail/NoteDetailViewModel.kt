@@ -44,7 +44,9 @@ data class NoteDetailUiState(
     val liveCaptionStableLen: Int = 0,
     val liveCaptionIsStable: Boolean = false,
     // Legacy fallback: true = still using old blocks format
-    val isLegacyFormat: Boolean = false
+    val isLegacyFormat: Boolean = false,
+    // ─── 流式布局视图模式 ───
+    val isFlowMode: Boolean = false
 )
 
 @HiltViewModel
@@ -463,6 +465,12 @@ class NoteDetailViewModel @Inject constructor(
     }
 
     // ─── Flow group management ──────────────────────────
+
+    /** Toggle the global flow layout view mode.  Purely a display toggle —
+     *  does not modify the underlying data structure. */
+    fun toggleFlowMode() {
+        _uiState.value = _uiState.value.copy(isFlowMode = !_uiState.value.isFlowMode)
+    }
 
     /** Append a flow group with one empty text item to start. */
     fun addFlowGroup() {

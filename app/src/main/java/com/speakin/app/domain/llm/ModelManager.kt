@@ -55,7 +55,12 @@ class ModelManager @Inject constructor(
     private fun getModelUrls(): List<String> = configRepo.getEffectiveLlmUrls()
 
     fun getModelFile(): File {
-        return File(context.filesDir, "models/$MODEL_FILENAME")
+        val customPath = configRepo.getModelStoragePath()
+        return if (customPath != null) {
+            File(customPath, "models/$MODEL_FILENAME")
+        } else {
+            File(context.filesDir, "models/$MODEL_FILENAME")
+        }
     }
 
     fun isModelReady(): Boolean {

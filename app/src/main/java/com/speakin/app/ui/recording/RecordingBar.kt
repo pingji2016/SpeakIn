@@ -72,7 +72,8 @@ fun RecordingBar(
     onAddText: () -> Unit = {},
     onAddImage: () -> Unit = {},
     onImportAudio: () -> Unit = {},
-    onAddFlow: () -> Unit = {},
+    onToggleFlowMode: () -> Unit = {},
+    isFlowMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition()
@@ -307,15 +308,16 @@ fun RecordingBar(
                             }
                         }
 
-                        // 流式布局按钮
+                        // 流式布局按钮（视图模式切换）
                         IconButton(
-                            onClick = onAddFlow,
+                            onClick = onToggleFlowMode,
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 Icons.Default.Dashboard,
-                                contentDescription = "Add flow layout",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                contentDescription = if (isFlowMode) "Exit flow layout" else "Flow layout",
+                                tint = if (isFlowMode) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(26.dp)
                             )
                         }

@@ -58,10 +58,16 @@ class AsrModelManager @Inject constructor(
     val modelState: StateFlow<ModelState> = _modelState.asStateFlow()
 
     /**
-     * 获取模型文件存放目录：context.filesDir/whisper/
+     * 获取模型文件存放目录。
+     * 优先使用用户自定义存储路径，否则使用默认内部存储。
      */
     fun getModelDir(): File {
-        return File(context.filesDir, MODEL_DIR_NAME)
+        val customPath = configRepo.getModelStoragePath()
+        return if (customPath != null) {
+            File(customPath, MODEL_DIR_NAME)
+        } else {
+            File(context.filesDir, MODEL_DIR_NAME)
+        }
     }
 
     /**

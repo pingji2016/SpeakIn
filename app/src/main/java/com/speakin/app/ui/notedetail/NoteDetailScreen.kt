@@ -242,9 +242,10 @@ fun NoteDetailScreen(
                     onImportAudio = {
                         audioPickerLauncher.launch("audio/*")
                     },
-                    onAddFlow = {
-                        viewModel.addFlowGroup()
-                    }
+                    onToggleFlowMode = {
+                        viewModel.toggleFlowMode()
+                    },
+                    isFlowMode = uiState.isFlowMode
                 )
             }
         ) { padding ->
@@ -362,7 +363,9 @@ fun NoteDetailScreen(
                             },
                             onAddItemToFlowGroup = { blockIdx, seg ->
                                 viewModel.addItemToFlowGroup(blockIdx, seg)
-                            }
+                            },
+                            // Global flow mode
+                            isFlowMode = uiState.isFlowMode
                         )
                     }
                 }
@@ -403,7 +406,9 @@ private fun RichContentArea(
     // Flow group callbacks
     onFlowItemChanged: (blockIndex: Int, itemIndex: Int, RichSegment) -> Unit = { _, _, _ -> },
     onFlowItemDeleted: (blockIndex: Int, itemIndex: Int) -> Unit = { _, _ -> },
-    onAddItemToFlowGroup: (blockIndex: Int, RichSegment) -> Unit = { _, _ -> }
+    onAddItemToFlowGroup: (blockIndex: Int, RichSegment) -> Unit = { _, _ -> },
+    // Global flow mode toggle
+    isFlowMode: Boolean = false
 ) {
     val scrollState = rememberScrollState()
     val totalSegments = remember(blocks) { blocks.flatMap {
@@ -456,101 +461,328 @@ private fun RichContentArea(
         }
 
         // Render each DocNode
-        blocks.forEachIndexed { blockIndex, node ->
-            when (node) {
-                is DocNode.Segment -> {
-                    val segment = node.content
-                    when (segment) {
-                        is RichSegment.Text -> EditableTextSegment(
-                            text = segment.text,
-                            spans = segment.spans,
-                            onTextChanged = { newText ->
-                                val updated = blocks.toMutableList()
-                                updated[blockIndex] = DocNode.Segment(
-                                    RichSegment.Text(newText, segment.spans)
-                                )
-                                onBlocksChanged(updated)
-                            },
-                            onDelete = {
-                                if (!isInitialEmpty) onDeleteBlock(blockIndex)
-                            },
-                            showDelete = !isInitialEmpty || blocks.size > 1,
-                            requestFocus = blockIndex == focusSegmentIndex,
-                            onFocusRequested = onFocusDone
-                        )
-                        is RichSegment.Image -> ImageSegmentView(
-                            imagePath = segment.imagePath,
-                            altText = segment.altText,
-                            onImageClick = { onImageClick(segment.imagePath) },
-                            onDelete = { onDeleteBlock(blockIndex) }
-                        )
-                        is RichSegment.Audio -> AudioSegmentView(
-                            audioPath = segment.audioPath,
-                            durationMs = segment.durationMs,
-                            transcription = segment.transcription,
-                            polishedText = segment.polishedText,
-                            isPlaying = playingAudioPath == segment.audioPath,
-                            onPlayPause = { play ->
-                                onAudioPlayPause(segment.audioPath, play)
-                            },
-                            onDelete = { onDeleteBlock(blockIndex) },
-                            onLongPress = { onEditAudio(blockIndex) }
-                        )
-                    }
-                }
-                is DocNode.FlowGroup -> {
-                    FlowGroupView(
-                        items = node.items,
-                        flowIndex = blockIndex,
-                        playingAudioPath = playingAudioPath,
-                        onItemChanged = { itemIdx, seg ->
-                            onFlowItemChanged(blockIndex, itemIdx, seg)
-                        },
-                        onItemDeleted = { itemIdx ->
-                            onFlowItemDeleted(blockIndex, itemIdx)
-                        },
-                        onImageClick = onImageClick,
-                        onAudioPlayPause = onAudioPlayPause,
-                        onAddItem = { seg ->
-                            onAddItemToFlowGroup(blockIndex, seg)
-                        }
-                    )
-                }
-                // Legacy ColumnGroup — migrated to FlowGroup on load, but handle in case of stale UI state
-                is DocNode.ColumnGroup -> {
-                    // Render legacy columns as a fallback (should rarely be reached after migration)
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
+        if (isFlowMode) {
+            // ── Flow mode: top-level Segments flow side-by-side in a FlowRow ──
+            val topLevelSegments = blocks.mapIndexedNotNull { idx, node ->
+                if (node is DocNode.Segment) idx to node.content else null
+            }
+            if (topLevelSegments.isNotEmpty()) {
+                val configuration = LocalConfiguration.current
+                val thumbnailWidth = (configuration.screenWidthDp / 5).dp
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        node.columns.forEach { col ->
-                            col.children.forEach { seg ->
-                                when (seg) {
-                                    is RichSegment.Text -> EditableTextSegment(
-                                        text = seg.text,
-                                        spans = seg.spans,
-                                        onTextChanged = {},
-                                        onDelete = {},
-                                        showDelete = false
+                        topLevelSegments.forEach { (blockIndex, segment) ->
+                            when (segment) {
+                                is RichSegment.Text -> {
+                                    var textFieldValue by remember(segment) {
+                                        mutableStateOf(
+                                            TextFieldValue(
+                                                annotatedString = buildAnnotatedForDisplay(segment.text, segment.spans),
+                                                selection = TextRange(segment.text.length)
+                                            )
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier
+                                            .widthIn(min = 100.dp, max = 300.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        BasicTextField(
+                                            value = textFieldValue,
+                                            onValueChange = { newValue ->
+                                                textFieldValue = newValue
+                                                val updated = blocks.toMutableList()
+                                                updated[blockIndex] = DocNode.Segment(
+                                                    RichSegment.Text(newValue.text, segment.spans)
+                                                )
+                                                onBlocksChanged(updated)
+                                            },
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            ),
+                                            cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                                                MaterialTheme.colorScheme.primary
+                                            ),
+                                            modifier = Modifier.weight(1f),
+                                            minLines = 1,
+                                            maxLines = 3
+                                        )
+                                        IconButton(
+                                            onClick = { if (!isInitialEmpty) onDeleteBlock(blockIndex) },
+                                            modifier = Modifier.size(22.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Remove",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                is RichSegment.Image -> {
+                                    Box(modifier = Modifier.size(thumbnailWidth)) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(LocalContext.current)
+                                                .data(File(segment.imagePath))
+                                                .crossfade(true)
+                                                .size(300)
+                                                .build(),
+                                            contentDescription = segment.altText.ifEmpty { "Image" },
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable { onImageClick(segment.imagePath) }
+                                        )
+                                        IconButton(
+                                            onClick = { onDeleteBlock(blockIndex) },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(2.dp)
+                                                .size(22.dp)
+                                                .clip(CircleShape)
+                                                .background(Color.Black.copy(alpha = 0.5f))
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Remove",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                is RichSegment.Audio -> {
+                                    Row(
+                                        modifier = Modifier
+                                            .widthIn(min = 160.dp, max = 340.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                onAudioPlayPause(
+                                                    segment.audioPath,
+                                                    playingAudioPath != segment.audioPath
+                                                )
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                if (playingAudioPath == segment.audioPath) Icons.Default.Stop
+                                                else Icons.Default.PlayArrow,
+                                                contentDescription = if (playingAudioPath == segment.audioPath) "Stop" else "Play",
+                                                tint = MaterialTheme.colorScheme.secondary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = "Audio",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = { onDeleteBlock(blockIndex) },
+                                            modifier = Modifier.size(22.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Remove",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Render FlowGroups and legacy ColumnGroups below the flow row
+            blocks.forEachIndexed { blockIndex, node ->
+                when (node) {
+                    is DocNode.FlowGroup -> {
+                        FlowGroupView(
+                            items = node.items,
+                            flowIndex = blockIndex,
+                            playingAudioPath = playingAudioPath,
+                            onItemChanged = { itemIdx, seg ->
+                                onFlowItemChanged(blockIndex, itemIdx, seg)
+                            },
+                            onItemDeleted = { itemIdx ->
+                                onFlowItemDeleted(blockIndex, itemIdx)
+                            },
+                            onImageClick = onImageClick,
+                            onAudioPlayPause = onAudioPlayPause,
+                            onAddItem = { seg ->
+                                onAddItemToFlowGroup(blockIndex, seg)
+                            }
+                        )
+                    }
+                    is DocNode.ColumnGroup -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            node.columns.forEach { col ->
+                                col.children.forEach { seg ->
+                                    when (seg) {
+                                        is RichSegment.Text -> EditableTextSegment(
+                                            text = seg.text,
+                                            spans = seg.spans,
+                                            onTextChanged = {},
+                                            onDelete = {},
+                                            showDelete = false
+                                        )
+                                        is RichSegment.Image -> ImageSegmentView(
+                                            imagePath = seg.imagePath,
+                                            altText = seg.altText,
+                                            onImageClick = { onImageClick(seg.imagePath) },
+                                            onDelete = {}
+                                        )
+                                        is RichSegment.Audio -> AudioSegmentView(
+                                            audioPath = seg.audioPath,
+                                            durationMs = seg.durationMs,
+                                            transcription = seg.transcription,
+                                            polishedText = seg.polishedText,
+                                            isPlaying = playingAudioPath == seg.audioPath,
+                                            onPlayPause = { play ->
+                                                onAudioPlayPause(seg.audioPath, play)
+                                            },
+                                            onDelete = {},
+                                            onLongPress = {}
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is DocNode.Segment -> { /* rendered in FlowRow above */ }
+                }
+            }
+        } else {
+            // ── Normal mode: vertical column layout ──
+            blocks.forEachIndexed { blockIndex, node ->
+                when (node) {
+                    is DocNode.Segment -> {
+                        val segment = node.content
+                        when (segment) {
+                            is RichSegment.Text -> EditableTextSegment(
+                                text = segment.text,
+                                spans = segment.spans,
+                                onTextChanged = { newText ->
+                                    val updated = blocks.toMutableList()
+                                    updated[blockIndex] = DocNode.Segment(
+                                        RichSegment.Text(newText, segment.spans)
                                     )
-                                    is RichSegment.Image -> ImageSegmentView(
-                                        imagePath = seg.imagePath,
-                                        altText = seg.altText,
-                                        onImageClick = { onImageClick(seg.imagePath) },
-                                        onDelete = {}
-                                    )
-                                    is RichSegment.Audio -> AudioSegmentView(
-                                        audioPath = seg.audioPath,
-                                        durationMs = seg.durationMs,
-                                        transcription = seg.transcription,
-                                        polishedText = seg.polishedText,
-                                        isPlaying = playingAudioPath == seg.audioPath,
-                                        onPlayPause = { play ->
-                                            onAudioPlayPause(seg.audioPath, play)
-                                        },
-                                        onDelete = {},
-                                        onLongPress = {}
-                                    )
+                                    onBlocksChanged(updated)
+                                },
+                                onDelete = {
+                                    if (!isInitialEmpty) onDeleteBlock(blockIndex)
+                                },
+                                showDelete = !isInitialEmpty || blocks.size > 1,
+                                requestFocus = blockIndex == focusSegmentIndex,
+                                onFocusRequested = onFocusDone
+                            )
+                            is RichSegment.Image -> ImageSegmentView(
+                                imagePath = segment.imagePath,
+                                altText = segment.altText,
+                                onImageClick = { onImageClick(segment.imagePath) },
+                                onDelete = { onDeleteBlock(blockIndex) }
+                            )
+                            is RichSegment.Audio -> AudioSegmentView(
+                                audioPath = segment.audioPath,
+                                durationMs = segment.durationMs,
+                                transcription = segment.transcription,
+                                polishedText = segment.polishedText,
+                                isPlaying = playingAudioPath == segment.audioPath,
+                                onPlayPause = { play ->
+                                    onAudioPlayPause(segment.audioPath, play)
+                                },
+                                onDelete = { onDeleteBlock(blockIndex) },
+                                onLongPress = { onEditAudio(blockIndex) }
+                            )
+                        }
+                    }
+                    is DocNode.FlowGroup -> {
+                        FlowGroupView(
+                            items = node.items,
+                            flowIndex = blockIndex,
+                            playingAudioPath = playingAudioPath,
+                            onItemChanged = { itemIdx, seg ->
+                                onFlowItemChanged(blockIndex, itemIdx, seg)
+                            },
+                            onItemDeleted = { itemIdx ->
+                                onFlowItemDeleted(blockIndex, itemIdx)
+                            },
+                            onImageClick = onImageClick,
+                            onAudioPlayPause = onAudioPlayPause,
+                            onAddItem = { seg ->
+                                onAddItemToFlowGroup(blockIndex, seg)
+                            }
+                        )
+                    }
+                    // Legacy ColumnGroup — migrated to FlowGroup on load, but handle in case of stale UI state
+                    is DocNode.ColumnGroup -> {
+                        // Render legacy columns as a fallback (should rarely be reached after migration)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            node.columns.forEach { col ->
+                                col.children.forEach { seg ->
+                                    when (seg) {
+                                        is RichSegment.Text -> EditableTextSegment(
+                                            text = seg.text,
+                                            spans = seg.spans,
+                                            onTextChanged = {},
+                                            onDelete = {},
+                                            showDelete = false
+                                        )
+                                        is RichSegment.Image -> ImageSegmentView(
+                                            imagePath = seg.imagePath,
+                                            altText = seg.altText,
+                                            onImageClick = { onImageClick(seg.imagePath) },
+                                            onDelete = {}
+                                        )
+                                        is RichSegment.Audio -> AudioSegmentView(
+                                            audioPath = seg.audioPath,
+                                            durationMs = seg.durationMs,
+                                            transcription = seg.transcription,
+                                            polishedText = seg.polishedText,
+                                            isPlaying = playingAudioPath == seg.audioPath,
+                                            onPlayPause = { play ->
+                                                onAudioPlayPause(seg.audioPath, play)
+                                            },
+                                            onDelete = {},
+                                            onLongPress = {}
+                                        )
+                                    }
                                 }
                             }
                         }
