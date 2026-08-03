@@ -199,6 +199,23 @@ adb push llm_models/qwen3-0.6b-q4_k_m.gguf /data/data/com.speakin.app/files/mode
 
 ### 路线图
 
+3. 部署脚本
+
+已写入 scripts/deploy.sh，用法如下：
+
+# 一键部署：推送模型 + 构建 + 安装 APK
+./scripts/deploy.sh
+
+# 仅构建并安装 APK
+./scripts/deploy.sh --apk-only
+
+# 仅推送模型文件
+./scripts/deploy.sh --models-only
+
+# 顺便推送测试音频
+./scripts/deploy.sh --m4a /path/to/audio.m4a
+
+
 更多功能规划请参考 [PRD.md](PRD.md)，包括：
 
 - 🔲 波形可视化
