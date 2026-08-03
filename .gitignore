@@ -36,6 +36,14 @@ whisper_models/
 llm_models/
 speakin_assets/src/main/assets/models/
 
+# ── Libraries (managed by build system) ────────────
+app/libs/
+model-service/libs/
+
+# ── Test assets (audio samples, etc.) ──────────────
+model-service/*.m4a
+model-service/test/
+
 # ── Signing (keep out of VCS) ───────────────────────
 *.jks
 *.keystore
