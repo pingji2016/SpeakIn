@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -100,7 +101,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun NoteDetailScreen(
     onNavigateBack: () -> Unit,
@@ -800,6 +801,7 @@ private fun RichContentArea(
 // Flow Group View — wrapping flow layout using FlowRow
 // ═══════════════════════════════════════════════════════════════
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FlowGroupView(
     items: List<RichSegment>,
